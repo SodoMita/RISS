@@ -8,11 +8,14 @@ mod android_app_entry;
 mod app_entry;
 
 mod history;
+mod providers;
 mod search;
+mod settings;
+mod theme;
 mod ui;
 
 #[cfg(target_os = "android")]
-use winit::platform::android::activity::AndroidApp;
+use eframe::winit::platform::android::activity::AndroidApp;
 
 #[cfg(target_os = "android")]
 #[no_mangle]
@@ -61,24 +64,4 @@ fn android_main(app: AndroidApp) {
     ) {
         log::error!("eframe failed: {:?}", e);
     }
-}
-
-// Desktop entry point
-#[cfg(not(target_os = "android"))]
-fn main() -> eframe::Result {
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 600.0])
-            .with_min_inner_size([300.0, 400.0]),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "RISS Launcher",
-        native_options,
-        Box::new(|cc| {
-            ui::setup_fonts(&cc.egui_ctx);
-            Ok(Box::new(ui::RissApp::new(cc)))
-        }),
-    )
 }

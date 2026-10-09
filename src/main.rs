@@ -8,15 +8,19 @@ mod android_app_entry;
 mod app_entry;
 
 mod history;
+mod providers;
 mod search;
+mod settings;
+mod theme;
 mod ui;
 
 #[cfg(not(target_os = "android"))]
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 600.0])
-            .with_min_inner_size([300.0, 400.0]),
+            .with_title("RISS Launcher")
+            .with_inner_size([420.0, 640.0])
+            .with_min_inner_size([320.0, 400.0]),
         ..Default::default()
     };
 

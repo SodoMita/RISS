@@ -1,26 +1,43 @@
 # RISS Launcher (Rust + egui)
 
-A minimalist application launcher inspired by RISS Launcher for Android, built with Rust and egui. Works on Linux and can be adapted for other platforms.
+A minimalist application launcher for Linux and Android, inspired by
+[KISS Launcher](https://github.com/Neamar/KISS) and rebuilt with Rust and
+[egui](https://github.com/emilk/egui). The whole feature set of KISS — the touch
+behaviour, the favourites bar, the tags, the providers and the complete settings
+tree — is implemented here on top of an immediate mode toolkit.
 
-![RISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.70+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+![RISS Launcher](https://img.shields.io/badge/platform-Linux%20%2B%20Android-blue) ![Rust](https://img.shields.io/badge/rust-1.70+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
-✨ **Minimalist Interface** - Clean, distraction-free UI with search bar at the bottom (RISS style)
+✨ **KISS layout** - info bar, result list, favourites bar and search bar, every
+one of them movable, resizable or hidden from the settings
 
-🔍 **Fuzzy Search** - Find apps quickly with intelligent fuzzy matching
+👆 **Touch first** - tap to launch, long press (or right click) for the context
+menu, press animations, comfortable touch targets, configurable long press delay
 
-⭐ **Favorites** - Mark frequently used apps as favorites for quick access
+🔍 **Fuzzy search** - exact / prefix / fuzzy / tag / category matching, a
+"min match precision" slider and the optional legacy matcher
 
-📊 **Usage Tracking** - Automatically tracks launch counts and shows frequently used apps
+⭐ **Favourites bar** - pinned applications, number shortcuts, tags applied to
+favourites automatically, single tap or two step launching
 
-🏷️ **Custom Tags** - Add custom tags to apps for better organization
+📊 **Usage tracking** - launch counts, recency, three ranking modes
+(usage count, recency, frecent) and a freezable history
 
-🧮 **Calculator** - Built-in calculator for quick math (supports +, -, *, /, ^, parentheses)
+🏷️ **Tags** - per application tags, a tag menu, "show untagged" and tag sorting
 
-⌨️ **Keyboard Navigation** - Full keyboard support for fast operation
+🧮 **Providers** - web search, shell commands, timers, calculator, settings
+search, excluded apps, previous searches — each one can be disabled
 
-🎨 **Dark Theme** - Beautiful dark theme with Catppuccin-inspired colors
+⚙️ **Complete settings** - eleven sections mirroring the KISS preference tree,
+searchable both from the settings screen and from the query bar
+
+💾 **Import / export** - everything is plain JSON under
+`~/.config/riss-launcher/`
+
+🎨 **Themes** - dark, light and solarized palettes, automatic night mode and a
+configurable accent colour
 
 ## Installation
 
@@ -37,200 +54,189 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 ### Building from Source
 
 ```bash
-# Clone or download the repository
-cd riss-launcher
-
-# Build the project
+git clone <this repository>
+cd RISS
 cargo build --release
-
-# Run the launcher
 ./target/release/riss_launcher
 ```
 
+`./run.sh` builds and starts the launcher, `./install.sh` installs the binary
+and the `riss-launcher.desktop` entry into `~/.local/bin` and
+`~/.local/share/applications`.
+
+### Android
+
+```bash
+cargo install cargo-ndk
+cargo ndk -t arm64-v8a -o target/android/lib/arm64-v8a build --release
+```
+
+The Android build uses the very same UI: the launcher lists the installed
+packages through JNI and launches them with the package manager.
+
 ## Usage
 
-### Basic Operation
+### Basic operation
 
-1. **Launch the app** - Run `riss_launcher` from terminal or create a desktop shortcut
-2. **Type to search** - Start typing to search through installed applications
-3. **Navigate results** - Use ↑↓ arrow keys or mouse to select an app
-4. **Launch** - Press Enter or click on an app to launch it
-5. **Clear search** - Press Escape to clear the search field
+1. Type to search — applications, providers, settings and special lists all
+   answer the same query
+2. `↑` / `↓` or a tap selects, `Enter` or a second tap launches
+3. Long press (or right click) a result for the context menu
+4. `Esc` walks back: menu, editor, dialog, settings, special view, tags, query,
+   and finally hides the window
 
-### Keyboard Shortcuts
+### Keyboard shortcuts
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Navigate through results |
-| `Enter` | Launch selected app |
-| `Esc` | Clear search / Close |
-| `Tab` | Cycle through results |
+| `↑` / `↓` | Move the selection |
+| `Tab` / `Shift+Tab` | Cycle through the results |
+| `Home` / `End`, `PageUp` / `PageDown` | Jump in the list |
+| `Enter` | Launch, or confirm the open dialog |
+| `Esc` | Back / clear / hide |
+| `1` – `9` | Launch the n-th result when the query is empty |
+| `F5` | Rescan the installed applications |
+| `Ctrl+Alt` + arrows / `L` | Configurable gestures (history, all apps, settings, menu…) |
 
-### Features Guide
+### Touch and buttons
 
-#### Favorites
-- Click the star (★/☆) icon next to any app to add/remove it from favorites
-- Favorites appear at the top when the search field is empty
+The interaction model follows KISS as closely as a desktop toolkit allows:
 
-#### Tags
-- Click the tag icon (🏷️) next to an app to add custom tags
-- Tags help you find apps using custom keywords
-- Example: Tag Firefox with "web", "internet", "browser"
+- **Tap** activates a result. With *prevent fast launch* or *double click
+  launches* the first tap only selects, exactly like KISS.
+- **Long press** (200–1500 ms, configurable) opens the context menu; a right
+  click does the same on a mouse.
+- **Press feedback** animates every row, favourite and button while it is held.
+- Row actions (favourite, tags) are laid out outside the clickable area of the
+  row, and rows use drag sensing so scrolling never launches anything.
+- Every overlay (context menu, tag editor, rename editor, shortcut pad) closes
+  when the pointer touches outside of it.
 
-#### Calculator
-- Type mathematical expressions directly in the search bar
-- Supported operators: `+`, `-`, `*`, `/`, `^` (power)
-- Supports parentheses: `(5+3)*2`
-- Example: Type `2^10` to see `= 1024`
+### Context menu
 
-#### App Discovery
-- Automatically scans standard Linux application directories:
-  - `/usr/share/applications`
-  - `/usr/local/share/applications`
-  - `~/.local/share/applications`
-- Reads `.desktop` files to discover installed applications
-- Click the refresh button (🔄) to rescan for new apps
+Long press a result to get the same entries as KISS: open, add/remove from
+favourites, edit tags, rename, clear usage data, stop tracking usage, exclude /
+restore the application, copy the name or the exec line, open the `.desktop`
+file, and pin the application to a number (`1`–`9`).
+
+### Providers
+
+| Provider | Example | Result |
+|----------|---------|--------|
+| Applications | `fire` | Launch the matching app |
+| Settings | `display app names` | Jump to the setting |
+| Web | `rust egui` | Open the search engine (`Enter`, custom providers supported) |
+| Exec | `ls -la` | Run a shell command |
+| Timer | `sleep 5m` | Start a countdown |
+| Calculator | `(5+3)*2` | Copy the answer |
+| Special views | `history`, `all apps` | Switch the list |
+
+Every provider can be switched off in the settings, and the provider results are
+sorted by score so the best match always ends up on top.
 
 ## Configuration
 
-History and favorites are stored in:
-```
-~/.config/riss-launcher/history.json
-```
-
-This file contains:
-- Launch counts for each app
-- Last launch timestamps
-- Favorite apps list
-- Custom tags
-
-## Screenshots
-
-The launcher features:
-- **Empty state**: Shows favorites and frequently used apps
-- **Search**: Instant fuzzy search with highlighted matches
-- **Calculator**: Quick calculations without leaving the launcher
-- **Tags**: Custom organization system
-
-## Customization
-
-### Colors
-Colors are defined in `src/ui.rs` in the `Colors` struct. You can customize the theme by modifying these constants:
-
-```rust
-struct Colors;
-impl Colors {
-    const BG: Color32 = Color32::from_rgb(30, 30, 46);
-    const TEXT: Color32 = Color32::from_rgb(205, 214, 244);
-    const ACCENT: Color32 = Color32::from_rgb(137, 180, 250);
-    // ... more colors
-}
-```
-
-### Window Size
-Modify the window size in `src/main.rs`:
-
-```rust
-.with_inner_size([420.0, 700.0])  // width, height
-.with_min_inner_size([320.0, 400.0])
-```
-
-## Development
-
-### Project Structure
+Everything lives in two JSON files:
 
 ```
-riss-launcher/
+~/.config/riss-launcher/settings.json   # every option of the settings screen
+~/.config/riss-launcher/history.json    # usage, favourites, tags, exclusions…
+~/.config/riss-launcher/riss-backup.json # written by Import / Export
+```
+
+Both files are optional: a missing or partial file simply falls back to the
+defaults, so upgrading never loses your data.
+
+### Settings sections
+
+| Section | Highlights |
+|---------|-----------|
+| Touch & buttons | long press menu + delay, prevent fast launch, double click, tap timeout, press feedback, minimum touch height, number keys, gestures |
+| Interface | theme, night mode, main colour, rounded list/bars, separators, margins, font scale, fullscreen, portrait, window size |
+| Results | result size, adaptive results / icons / columns, separators, app names, sub icons, tags, launch counters, row actions, grid position |
+| Search bar | position, info bar position, large bar, hidden hint, keyboard hints, transparency, swapped buttons |
+| Favorites | bar on/off, large bar, transparency, position, capacity, exclusion from apps/history, favourite tags, reset |
+| History | ranking mode, list length, tracking, freeze, search through history, reset |
+| Tags | visibility, tags menu, show untagged, tagged sort, reset |
+| Search providers | per provider switches, default provider, custom providers, min match precision, legacy matcher |
+| Excluded apps | list, restore, reset |
+| Import / export | backup and restore |
+| Advanced | reload applications, reset shortcuts, reset everything, about |
+
+## Project structure
+
+```
+RISS/
 ├── src/
-│   ├── main.rs          # Entry point
-│   ├── ui.rs            # UI components and main app state
-│   ├── app_entry.rs     # App discovery and .desktop file parsing
-│   ├── search.rs        # Search engine and fuzzy matching
-│   └── history.rs       # History tracking and persistence
-├── Cargo.toml           # Dependencies
-└── README.md           # This file
+│   ├── main.rs            # Desktop entry point
+│   ├── lib.rs             # Android entry point (JNI)
+│   ├── app_entry.rs       # .desktop discovery, parsing and launching
+│   ├── android_app_entry.rs
+│   ├── settings.rs        # Settings model, defaults, catalog, persistence
+│   ├── history.rs         # Usage, favourites, tags, exclusions, shortcuts
+│   ├── search.rs          # Search engine, match types, provider results
+│   ├── providers.rs       # Web search, exec, clipboard, timers, calculator
+│   ├── theme.rs           # Dark / light / solarized palettes
+│   └── ui/
+│       ├── mod.rs         # Application state and screens
+│       ├── results.rs     # Result list, adaptive grid, favourites bar
+│       ├── settings_view.rs # The settings screen
+│       └── widgets.rs     # Hand drawn icons and reusable widgets
+├── Cargo.toml
+└── README.md
 ```
 
 ### Dependencies
 
-- **eframe/egui** - Immediate mode GUI framework
-- **fuzzy-matcher** - Fuzzy string matching
-- **freedesktop-desktop-entry** - Parse .desktop files
-- **serde/serde_json** - Serialization for history
-- **open** - Cross-platform app launching
+- **eframe / egui 0.32** - immediate mode GUI (glow, x11, wayland, Android)
+- **fuzzy-matcher** - fuzzy string matching
+- **serde / serde_json** - persistence
+- **open** - open a URL in the browser
+- **jni / android_logger / once_cell** - Android bridge
 
-### Building for Release
+## Comparison with KISS Launcher (Android)
 
-```bash
-cargo build --release
-```
-
-The optimized binary will be in `target/release/riss_launcher`.
-
-## Comparison with RISS Launcher (Android)
-
-| Feature | KISS Android | This Implementation |
+| Feature | KISS Android | This implementation |
 |---------|--------------|---------------------|
-| Search bar position | Bottom | Bottom ✓ |
-| Fuzzy search | Yes | Yes ✓ |
-| Favorites | Yes | Yes ✓ |
-| Tags | Yes | Yes ✓ |
+| Search bar position | Bottom | Any position (top / bottom / middle / hidden) ✓ |
+| Fuzzy search | Yes | Yes, with precision slider ✓ |
+| Favorites bar | Yes | Yes, with capacity and shortcuts ✓ |
+| Tags | Yes | Yes, with tag menu ✓ |
 | Calculator | Yes | Yes ✓ |
-| Contact search | Yes | No (Linux-focused) |
-| Settings search | Yes | Partial |
-| Minimalist UI | Yes | Yes ✓ |
-| Usage tracking | Yes | Yes ✓ |
-
-## Future Enhancements
-
-- [ ] Support for web searches
-- [ ] File search integration
-- [ ] Command execution (run shell commands)
-- [ ] Custom themes/skins
-- [ ] Plugin system
-- [ ] Wayland-specific optimizations
-- [ ] Icon loading from system themes
-- [ ] Multi-language support
+| Settings search | Yes | Yes, from the query bar ✓ |
+| Web / exec / timer providers | Yes | Yes ✓ |
+| Usage tracking | Yes | Yes, with 3 ranking modes ✓ |
+| Excluded apps | Yes | Yes ✓ |
+| Import / export | Yes | Yes ✓ |
+| Gestures | Yes | Yes, mapped to keyboard ✓ |
+| Contact search | Yes | No (desktop focused) |
 
 ## Troubleshooting
 
-### App doesn't launch
-- Check if the app's executable is in your PATH
-- Verify the .desktop file has a valid Exec line
-- Check terminal output for error messages
+### An application does not launch
 
-### Apps not showing up
-- Click the refresh button (🔄) to rescan
-- Ensure .desktop files are in standard locations
-- Check that apps aren't marked as `NoDisplay=true` or `Hidden=true`
+- Check that the `Exec` line of the `.desktop` file works in a terminal
+- `TryExec` entries whose binary is missing are hidden on purpose
+- The status line under the search bar reports the error
 
-### Font issues
-- The app tries to load DejaVu Sans from system fonts
-- Falls back to egui's default font if not found
-- You can customize font loading in `src/ui.rs`
+### Applications are missing
+
+- Press `F5` (or use the reload button of the info bar)
+- Entries with `NoDisplay=true` or `Hidden=true` are skipped
+- Excluded applications are searchable through the *Excluded apps* provider and
+  can be restored from the settings
+
+### Fonts
+
+The launcher loads DejaVu Sans / Liberation / Noto on Linux and Roboto on
+Android, and falls back to the egui default font when none is found.
 
 ## License
 
 MIT License - feel free to use and modify as needed.
 
-## Contributing
-
-Contributions are welcome! Feel free to:
-- Report bugs
-- Suggest features
-- Submit pull requests
-- Improve documentation
-
 ## Credits
 
-- Inspired by [RISS Launcher](https://github.com/Neamar/KISS) for Android
+- Inspired by [KISS Launcher](https://github.com/Neamar/KISS) for Android
 - Built with [egui](https://github.com/emilk/egui) - an immediate mode GUI library
 - Uses [fuzzy-matcher](https://github.com/lotabout/fuzzy-matcher) for search
-
-## Support
-
-For issues, questions, or contributions, please open an issue on the project repository.
-
----
-
-**Made with ❤️ using Rust and egui**

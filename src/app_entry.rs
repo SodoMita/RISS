@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Special exec command: opens the RISS settings screen.
+pub const EXEC_SETTINGS: &str = "riss:settings";
+
 /// Represents a launchable application
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppEntry {
@@ -11,6 +14,7 @@ pub struct AppEntry {
     pub exec: String,
     pub icon: String,
     pub categories: Vec<String>,
+    pub keywords: Vec<String>,
     pub tags: Vec<String>,
     pub desktop_file: PathBuf,
     pub launch_count: u32,
@@ -19,6 +23,24 @@ pub struct AppEntry {
 }
 
 impl AppEntry {
+    /// Build a synthetic entry for things that are not real applications
+    /// (web searches, shell commands, settings rows, timers, …).
+    pub fn virtual_entry(name: &str, comment: &str, exec: &str) -> Self {
+        AppEntry {
+            name: name.to_string(),
+            comment: comment.to_string(),
+            exec: exec.to_string(),
+            icon: String::new(),
+            categories: Vec::new(),
+            keywords: Vec::new(),
+            tags: Vec::new(),
+            desktop_file: PathBuf::new(),
+            launch_count: 0,
+            last_launched: 0,
+            is_favorite: false,
+        }
+    }
+
     /// Search text for fuzzy matching (name + comment + tags + categories)
     pub fn searchable_text(&self) -> String {
         let mut parts = vec![self.name.clone()];
@@ -27,7 +49,13 @@ impl AppEntry {
         }
         parts.extend(self.tags.iter().cloned());
         parts.extend(self.categories.iter().cloned());
+        parts.extend(self.keywords.iter().cloned());
         parts.join(" ")
+    }
+
+    /// Is this one of the synthetic entries rather than a real application?
+    pub fn is_virtual(&self) -> bool {
+        self.desktop_file.as_os_str().is_empty()
     }
 
     /// Launch the application
@@ -35,38 +63,65 @@ impl AppEntry {
         if self.exec.is_empty() {
             return Err("No exec command".to_string());
         }
+        if self.exec == EXEC_SETTINGS {
+            return Ok(());
+        }
 
-        // Parse the exec string - remove field codes like %f, %F, %u, %U, etc.
-        let exec_parts: Vec<&str> = self.exec.split_whitespace().collect();
-        if exec_parts.is_empty() {
+        let command = strip_field_codes(&self.exec);
+        if command.is_empty() {
             return Err("Empty exec command".to_string());
         }
 
-        let cmd = exec_parts[0];
-        let args: Vec<&str> = exec_parts[1..]
-            .iter()
-            .filter(|a| !a.starts_with('%'))
-            .copied()
-            .collect();
-
-        std::process::Command::new(cmd)
-            .args(&args)
+        // A shell is used so quoted arguments and `%` handling behave the same
+        // way they do when the desktop environment launches the entry.
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&command)
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to launch {}: {}", self.name, e))
     }
 }
 
+/// Remove the desktop entry field codes (`%f`, `%U`, `%i`, …) from an `Exec`
+/// line, leaving a plain command line.
+pub fn strip_field_codes(exec: &str) -> String {
+    let codes = ['%', 'f', 'F', 'u', 'U', 'i', 'c', 'k', 'd', 'D', 'n', 'N', 'v', 'm'];
+    let mut out = String::new();
+    let mut chars = exec.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            // Skip the code character (`%%` is a literal percent sign).
+            if chars.peek() == Some(&'%') {
+                chars.next();
+                out.push('%');
+            } else if let Some(next) = chars.next() {
+                if !codes.contains(&next) {
+                    out.push('%');
+                    out.push(next);
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Parse a .desktop file into an AppEntry
 fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
     let content = fs::read_to_string(path).ok()?;
     let mut name = String::new();
+    let mut localized_name = String::new();
     let mut comment = String::new();
     let mut exec = String::new();
+    let mut try_exec: Vec<String> = Vec::new();
     let mut icon = String::new();
     let mut categories = Vec::new();
+    let mut keywords = Vec::new();
     let mut no_display = false;
     let mut hidden = false;
+    let mut entry_type_ok = true;
 
     let mut in_desktop_entry = false;
 
@@ -93,16 +148,34 @@ fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
             if name.is_empty() {
                 name = val.to_string();
             }
+        } else if line.starts_with("Name[") {
+            if let Some((_, val)) = line.split_once('=') {
+                if localized_name.is_empty() {
+                    localized_name = val.to_string();
+                }
+            }
         } else if let Some(val) = line.strip_prefix("Comment=") {
             if comment.is_empty() {
                 comment = val.to_string();
             }
         } else if let Some(val) = line.strip_prefix("Exec=") {
-            exec = val.to_string();
+            if exec.is_empty() {
+                exec = val.to_string();
+            }
+        } else if let Some(val) = line.strip_prefix("TryExec=") {
+            try_exec.push(val.to_string());
         } else if let Some(val) = line.strip_prefix("Icon=") {
-            icon = val.to_string();
+            if icon.is_empty() {
+                icon = val.to_string();
+            }
         } else if let Some(val) = line.strip_prefix("Categories=") {
             categories = val
+                .split(';')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+        } else if let Some(val) = line.strip_prefix("Keywords=") {
+            keywords = val
                 .split(';')
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string())
@@ -112,13 +185,22 @@ fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
         } else if let Some(val) = line.strip_prefix("Hidden=") {
             hidden = val.eq_ignore_ascii_case("true");
         } else if let Some(val) = line.strip_prefix("Type=") {
-            if !val.eq_ignore_ascii_case("Application") {
-                return None;
-            }
+            entry_type_ok = val.eq_ignore_ascii_case("Application");
         }
     }
 
+    if !entry_type_ok {
+        return None;
+    }
+    if name.is_empty() {
+        name = localized_name;
+    }
     if name.is_empty() || no_display || hidden {
+        return None;
+    }
+
+    // `TryExec` lets us hide entries whose binary is not installed.
+    if !try_exec.is_empty() && !try_exec.iter().any(|bin| which(bin).is_some()) {
         return None;
     }
 
@@ -128,12 +210,32 @@ fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
         exec,
         icon,
         categories,
+        keywords,
         tags: Vec::new(),
         desktop_file: path.to_path_buf(),
         launch_count: 0,
         last_launched: 0,
         is_favorite: false,
     })
+}
+
+/// Minimal `which` lookup over `PATH`.
+fn which(binary: &str) -> Option<PathBuf> {
+    if binary.contains('/') {
+        let path = PathBuf::from(binary);
+        return if path.is_file() { Some(path) } else { None };
+    }
+    let paths = std::env::var("PATH").ok()?;
+    for dir in paths.split(':') {
+        if dir.is_empty() {
+            continue;
+        }
+        let candidate = Path::new(dir).join(binary);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 /// Scan standard directories for .desktop files
@@ -204,11 +306,25 @@ fn scan_directory(dir: &Path, entries: &mut Vec<AppEntry>, seen: &mut HashMap<St
 pub fn builtin_entries() -> Vec<AppEntry> {
     vec![
         AppEntry {
+            name: "RISS Settings".to_string(),
+            comment: "Tune the launcher".to_string(),
+            exec: EXEC_SETTINGS.to_string(),
+            icon: "preferences-system".to_string(),
+            categories: vec!["Settings".to_string()],
+            keywords: vec!["settings".to_string(), "preferences".to_string()],
+            tags: vec!["settings".to_string(), "preferences".to_string()],
+            desktop_file: PathBuf::new(),
+            launch_count: 0,
+            last_launched: 0,
+            is_favorite: false,
+        },
+        AppEntry {
             name: "Lock Screen".to_string(),
             comment: "Lock the screen".to_string(),
             exec: "xdg-screensaver lock".to_string(),
             icon: "system-lock-screen".to_string(),
             categories: vec!["System".to_string()],
+            keywords: vec!["lock".to_string(), "screen".to_string()],
             tags: vec!["lock".to_string(), "screen".to_string()],
             desktop_file: PathBuf::new(),
             launch_count: 0,
@@ -216,11 +332,12 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             is_favorite: false,
         },
         AppEntry {
-            name: "Settings".to_string(),
+            name: "System Settings".to_string(),
             comment: "System settings".to_string(),
             exec: "gnome-control-center".to_string(),
             icon: "preferences-system".to_string(),
             categories: vec!["Settings".to_string()],
+            keywords: vec!["settings".to_string(), "preferences".to_string()],
             tags: vec!["settings".to_string(), "preferences".to_string()],
             desktop_file: PathBuf::new(),
             launch_count: 0,
@@ -233,6 +350,7 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             exec: "xdg-open ~".to_string(),
             icon: "system-file-manager".to_string(),
             categories: vec!["System".to_string()],
+            keywords: vec!["files".to_string(), "explorer".to_string()],
             tags: vec!["files".to_string(), "explorer".to_string()],
             desktop_file: PathBuf::new(),
             launch_count: 0,
@@ -245,15 +363,31 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             exec: "x-terminal-emulator".to_string(),
             icon: "utilities-terminal".to_string(),
             categories: vec!["System".to_string()],
-            tags: vec![
-                "terminal".to_string(),
-                "console".to_string(),
-                "shell".to_string(),
-            ],
+            keywords: vec!["terminal".to_string(), "console".to_string()],
+            tags: vec!["terminal".to_string(), "console".to_string(), "shell".to_string()],
             desktop_file: PathBuf::new(),
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_field_codes() {
+        assert_eq!(strip_field_codes("firefox %u"), "firefox");
+        assert_eq!(strip_field_codes("gimp-2.10 %U"), "gimp-2.10");
+        assert_eq!(strip_field_codes("app --flag  42"), "app --flag 42");
+    }
+
+    #[test]
+    fn virtual_entries_are_marked() {
+        let entry = AppEntry::virtual_entry("Search", "web", "https://example.org");
+        assert!(entry.is_virtual());
+        assert_eq!(entry.name, "Search");
+    }
 }
