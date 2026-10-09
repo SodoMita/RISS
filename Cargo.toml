@@ -25,9 +25,6 @@ eframe = { version = "0.32", default-features = false, features = [
     "x11",
     "wayland",
 ] }
-directories = "5.0"
-freedesktop-desktop-entry = "0.5"
-open = "5.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 eframe = { version = "0.32", default-features = false, features = [
@@ -38,6 +35,8 @@ eframe = { version = "0.32", default-features = false, features = [
 android_logger = "0.14"
 jni = "0.21"
 once_cell = "1.19"
+# AndroidApp is imported directly; keep desktop defaults disabled here.
+winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
 
 [profile.release]
 opt-level = 2

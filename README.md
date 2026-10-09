@@ -155,9 +155,29 @@ riss-launcher/
 
 - **eframe/egui** - Immediate mode GUI framework
 - **fuzzy-matcher** - Fuzzy string matching
-- **freedesktop-desktop-entry** - Parse .desktop files
 - **serde/serde_json** - Serialization for history
-- **open** - Cross-platform app launching
+
+Desktop entries are already parsed locally and applications launched through
+`std::process::Command`, so `freedesktop-desktop-entry`, `open`, and `directories`
+are not needed. Removing them also removes their exclusive transitive dependencies,
+including the native `gettext-sys` build. Retained dependency versions are unchanged.
+
+`egui`, `log`, and `once_cell` remain in use; Android debug logging is unchanged.
+The existing platform split is preserved: desktop enables X11/Wayland, while
+Android enables native activity support, not desktop window backends. Android's
+direct `winit` dependency uses the same version as eframe, with defaults disabled.
+
+To check the dependency feature split and build with the checked-in lockfile:
+
+```bash
+python3 .github/scripts/check-platform-features.py x86_64-unknown-linux-gnu aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+cargo test --locked
+cargo build --locked --release --bin riss_launcher
+# With the Android targets and NDK installed (see ANDROID.md):
+cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build --locked --release --lib
+```
+
+Build-time and binary-size improvements are not yet benchmarked.
 
 ### Building for Release
 
