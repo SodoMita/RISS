@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -92,7 +93,7 @@ impl HistoryData {
             .iter()
             .map(|(exec, ts)| (exec.clone(), *ts))
             .collect();
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by_key(|(_, ts)| std::cmp::Reverse(*ts));
         entries.truncate(MAX_TRACKED_APPS);
         let keep: Vec<String> = entries.into_iter().map(|(exec, _)| exec).collect();
         self.launch_counts.retain(|exec, _| keep.contains(exec));

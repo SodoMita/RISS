@@ -381,20 +381,11 @@ impl GestureAction {
 }
 
 /// A user defined web search provider (`url` may contain `{}` or `%s`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SearchProvider {
     pub name: String,
     pub url: String,
-}
-
-impl Default for SearchProvider {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            url: String::new(),
-        }
-    }
 }
 
 /// All launcher settings. `#[serde(default)]` keeps old files loadable.
@@ -673,7 +664,7 @@ impl Settings {
             return columns;
         }
         // A single lonely row in a wide grid looks broken: shrink to the items.
-        let rows = (count + columns - 1) / columns;
+        let rows = count.div_ceil(columns);
         if rows <= 1 {
             columns.min(count)
         } else {
@@ -1343,8 +1334,10 @@ mod tests {
 
     #[test]
     fn row_height_never_below_touch_target() {
-        let mut settings = Settings::default();
-        settings.min_touch_height = 44.0;
+        let settings = Settings {
+            min_touch_height: 44.0,
+            ..Settings::default()
+        };
         assert!(settings.row_height(50) >= 44.0);
     }
 

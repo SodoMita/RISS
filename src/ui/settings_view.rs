@@ -326,6 +326,8 @@ fn toggle_row(
     row_frame(ui, palette, highlighted);
 }
 
+/// Row helper: `ui`, `palette`, `state`, `id`, `label`, `hint`, `value`, `range`.
+#[allow(clippy::too_many_arguments)]
 fn slider_row(
     ui: &mut egui::Ui,
     palette: &Palette,
@@ -360,6 +362,8 @@ fn slider_row(
     row_frame(ui, palette, highlighted);
 }
 
+/// Row helper: `ui`, `palette`, `state`, `id`, `label`, `hint`, `options`, `current`.
+#[allow(clippy::too_many_arguments)]
 fn choice_row(
     ui: &mut egui::Ui,
     palette: &Palette,

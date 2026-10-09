@@ -331,7 +331,7 @@ fn searchable_text(app: &AppEntry, aliases: &HashMap<String, String>) -> String 
     let mut text = app.searchable_text();
     if let Some(alias) = aliases.get(&app.exec) {
         text.insert_str(0, alias);
-        text.insert_str(0, " ");
+        text.insert(0, ' ');
     }
     text
 }
