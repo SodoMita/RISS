@@ -1,7 +1,7 @@
-#[cfg(not(target_os = "android"))]
-use crate::app_entry::AppEntry;
 #[cfg(target_os = "android")]
 use crate::android_app_entry::AppEntry;
+#[cfg(not(target_os = "android"))]
+use crate::app_entry::AppEntry;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 
@@ -37,7 +37,7 @@ impl SearchEngine {
     /// Search through apps with the given query
     pub fn search(&self, query: &str, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
         let query = query.trim();
-        
+
         if query.is_empty() {
             return Vec::new();
         }
@@ -112,7 +112,7 @@ impl SearchEngine {
             .collect();
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.sort_by_key(|a| std::cmp::Reverse(a.score));
         results.truncate(max_results);
         results
     }
@@ -140,7 +140,7 @@ impl SearchEngine {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.sort_by_key(|a| std::cmp::Reverse(a.score));
         results.truncate(max_results);
         results
     }
@@ -149,7 +149,7 @@ impl SearchEngine {
 /// Try to evaluate a mathematical expression
 pub fn try_calculate(input: &str) -> Option<String> {
     let input = input.trim();
-    
+
     // Only try if it looks like a math expression
     if !input.chars().any(|c| "+-*/^".contains(c)) {
         return None;
@@ -158,12 +158,17 @@ pub fn try_calculate(input: &str) -> Option<String> {
     // Simple expression evaluator
     // Supports: +, -, *, /, ^, parentheses
     let result = evaluate_expression(input)?;
-    
+
     // Format nicely
     if result.fract() == 0.0 && result.abs() < 1e15 {
         Some(format!("= {}", result as i64))
     } else {
-        Some(format!("= {:.6}", result).trim_end_matches('0').trim_end_matches('.').to_string())
+        Some(
+            format!("= {:.6}", result)
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string(),
+        )
     }
 }
 
@@ -171,10 +176,10 @@ pub fn try_calculate(input: &str) -> Option<String> {
 fn evaluate_expression(input: &str) -> Option<f64> {
     let input = input.trim();
     let mut chars = input.chars().peekable();
-    
+
     fn parse_expr(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
         let mut left = parse_term(chars)?;
-        
+
         loop {
             match chars.peek() {
                 Some('+') => {
@@ -190,13 +195,13 @@ fn evaluate_expression(input: &str) -> Option<f64> {
                 _ => break,
             }
         }
-        
+
         Some(left)
     }
-    
+
     fn parse_term(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
         let mut left = parse_power(chars)?;
-        
+
         loop {
             match chars.peek() {
                 Some('*') => {
@@ -215,13 +220,13 @@ fn evaluate_expression(input: &str) -> Option<f64> {
                 _ => break,
             }
         }
-        
+
         Some(left)
     }
-    
+
     fn parse_power(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
         let base = parse_factor(chars)?;
-        
+
         if chars.peek() == Some(&'^') {
             chars.next();
             let exp = parse_power(chars)?; // Right associative
@@ -230,20 +235,20 @@ fn evaluate_expression(input: &str) -> Option<f64> {
             Some(base)
         }
     }
-    
+
     fn parse_factor(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
         // Skip whitespace
         while chars.peek() == Some(&' ') {
             chars.next();
         }
-        
+
         // Handle unary minus
         if chars.peek() == Some(&'-') {
             chars.next();
             let val = parse_factor(chars)?;
             return Some(-val);
         }
-        
+
         // Handle parentheses
         if chars.peek() == Some(&'(') {
             chars.next();
@@ -254,21 +259,21 @@ fn evaluate_expression(input: &str) -> Option<f64> {
             }
             return None;
         }
-        
+
         // Parse number
         let mut num_str = String::new();
         while let Some(&c) = chars.peek() {
-            if c.is_digit(10) || c == '.' {
+            if c.is_ascii_digit() || c == '.' {
                 num_str.push(c);
                 chars.next();
             } else {
                 break;
             }
         }
-        
+
         num_str.parse().ok()
     }
-    
+
     parse_expr(&mut chars)
 }
 

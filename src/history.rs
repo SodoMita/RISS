@@ -111,7 +111,7 @@ impl HistoryData {
             .filter(|(_, &c)| c > 0)
             .map(|(k, &v)| (k.clone(), v))
             .collect();
-        counts.sort_by(|a, b| b.1.cmp(&a.1));
+        counts.sort_by_key(|a| std::cmp::Reverse(a.1));
         counts.truncate(n);
         counts
     }

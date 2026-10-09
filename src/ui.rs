@@ -1,7 +1,7 @@
-#[cfg(not(target_os = "android"))]
-use crate::app_entry::{self, AppEntry};
 #[cfg(target_os = "android")]
 use crate::android_app_entry::{self as app_entry, AppEntry};
+#[cfg(not(target_os = "android"))]
+use crate::app_entry::{self, AppEntry};
 use crate::history::HistoryData;
 use crate::search::{self, MatchType, SearchEngine, SearchResult};
 use eframe::egui;
@@ -56,9 +56,9 @@ impl RissApp {
         // Merge in builtin entries (only if no similar app found)
         let builtins = app_entry::builtin_entries();
         for builtin in builtins {
-            let dominated = apps.iter().any(|a| {
-                a.name.to_lowercase() == builtin.name.to_lowercase()
-            });
+            let dominated = apps
+                .iter()
+                .any(|a| a.name.to_lowercase() == builtin.name.to_lowercase());
             if !dominated {
                 apps.push(builtin);
             }
@@ -94,20 +94,26 @@ impl RissApp {
     fn update_results(&mut self) {
         if self.query.trim().is_empty() {
             // Show ALL apps when query is empty, sorted by favorites first, then by name
-            let mut all_apps: Vec<SearchResult> = self.apps.iter()
+            let mut all_apps: Vec<SearchResult> = self
+                .apps
+                .iter()
                 .map(|app| SearchResult {
                     entry: app.clone(),
                     score: if app.is_favorite { 1000 } else { 0 } + app.launch_count as i64,
                     match_type: MatchType::Exact,
                 })
                 .collect();
-            
+
             // Sort: favorites first, then by launch count, then alphabetically
             all_apps.sort_by(|a, b| {
-                b.score.cmp(&a.score)
-                    .then_with(|| a.entry.name.to_lowercase().cmp(&b.entry.name.to_lowercase()))
+                b.score.cmp(&a.score).then_with(|| {
+                    a.entry
+                        .name
+                        .to_lowercase()
+                        .cmp(&b.entry.name.to_lowercase())
+                })
             });
-            
+
             self.results = all_apps;
         } else {
             self.results = self.search_engine.search(&self.query, &self.apps, 20);
@@ -145,9 +151,10 @@ impl RissApp {
 
     fn toggle_favorite(&mut self, index: usize) {
         // Clone the necessary data to avoid borrow conflicts
-        let entry_data = self.results.get(index).map(|r| {
-            (r.entry.exec.clone(), r.entry.name.clone())
-        });
+        let entry_data = self
+            .results
+            .get(index)
+            .map(|r| (r.entry.exec.clone(), r.entry.name.clone()));
 
         if let Some((exec, name)) = entry_data {
             let is_fav = self.history.toggle_favorite(&exec);
@@ -202,13 +209,19 @@ impl RissApp {
             "🌐".to_string()
         } else if entry.name.to_lowercase().contains("file") {
             "📁".to_string()
-        } else if entry.name.to_lowercase().contains("text") || entry.name.to_lowercase().contains("editor") {
+        } else if entry.name.to_lowercase().contains("text")
+            || entry.name.to_lowercase().contains("editor")
+        {
             "📝".to_string()
         } else if entry.name.to_lowercase().contains("calc") {
             "🧮".to_string()
-        } else if entry.name.to_lowercase().contains("mail") || entry.name.to_lowercase().contains("thunder") {
+        } else if entry.name.to_lowercase().contains("mail")
+            || entry.name.to_lowercase().contains("thunder")
+        {
             "✉️".to_string()
-        } else if entry.name.to_lowercase().contains("music") || entry.name.to_lowercase().contains("spotify") {
+        } else if entry.name.to_lowercase().contains("music")
+            || entry.name.to_lowercase().contains("spotify")
+        {
             "🎵".to_string()
         } else {
             // First letter of the name
@@ -288,7 +301,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
     }
 
     // Ignore font errors silently - fall back to default fonts
-    let _ = ctx.set_fonts(fonts);
+    ctx.set_fonts(fonts);
 }
 
 impl eframe::App for RissApp {
@@ -423,11 +436,9 @@ impl RissApp {
             self.selected_index = (self.selected_index + 1).min(self.results.len() - 1);
         }
 
-        if escape_pressed {
-            if !self.query.is_empty() {
-                self.query.clear();
-                self.update_results();
-            }
+        if escape_pressed && !self.query.is_empty() {
+            self.query.clear();
+            self.update_results();
         }
 
         if tab_pressed && !self.results.is_empty() {
@@ -447,10 +458,7 @@ impl RissApp {
 
                 frame.show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new("🧮")
-                                .font(FontId::proportional(20.0)),
-                        );
+                        ui.label(RichText::new("🧮").font(FontId::proportional(20.0)));
                         ui.add_space(8.0);
                         ui.label(
                             RichText::new(&self.query)
@@ -490,10 +498,13 @@ impl RissApp {
         }
 
         // Show section headers
-        let show_favorites_header = self.query.is_empty()
-            && self.results.iter().any(|r| r.entry.is_favorite);
+        let show_favorites_header =
+            self.query.is_empty() && self.results.iter().any(|r| r.entry.is_favorite);
         let show_frequent_header = self.query.is_empty()
-            && self.results.iter().any(|r| !r.entry.is_favorite && r.entry.launch_count > 0);
+            && self
+                .results
+                .iter()
+                .any(|r| !r.entry.is_favorite && r.entry.launch_count > 0);
 
         let mut shown_favorites = false;
         let mut shown_frequent = false;
@@ -517,7 +528,11 @@ impl RissApp {
                             .strong(),
                     );
                     ui.add_space(4.0);
-                } else if !is_favorite && launch_count > 0 && !shown_frequent && show_frequent_header {
+                } else if !is_favorite
+                    && launch_count > 0
+                    && !shown_frequent
+                    && show_frequent_header
+                {
                     shown_frequent = true;
                     ui.add_space(8.0);
                     ui.label(
@@ -559,9 +574,8 @@ impl RissApp {
             ui.horizontal(|ui| {
                 // App icon
                 let icon_text = Self::get_app_icon(&result.entry);
-                let icon_label = ui.label(
-                    RichText::new(&icon_text).font(FontId::proportional(24.0)),
-                );
+                let icon_label =
+                    ui.label(RichText::new(&icon_text).font(FontId::proportional(24.0)));
                 let _ = icon_label;
 
                 ui.add_space(8.0);
@@ -622,7 +636,11 @@ impl RissApp {
                 // Right side: launch count + favorite button
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Favorite button
-                    let fav_text = if result.entry.is_favorite { "★" } else { "☆" };
+                    let fav_text = if result.entry.is_favorite {
+                        "★"
+                    } else {
+                        "☆"
+                    };
                     let fav_color = if result.entry.is_favorite {
                         Colors::FAVORITE
                     } else {
@@ -747,10 +765,7 @@ impl RissApp {
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 // Search icon
-                ui.label(
-                    RichText::new("🔍")
-                        .font(FontId::proportional(18.0)),
-                );
+                ui.label(RichText::new("🔍").font(FontId::proportional(18.0)));
                 ui.add_space(4.0);
 
                 // Search input
@@ -772,8 +787,8 @@ impl RissApp {
                 }
 
                 // Clear button
-                if !self.query.is_empty() {
-                    if ui
+                if !self.query.is_empty()
+                    && ui
                         .add(
                             egui::Button::new(
                                 RichText::new("✕")
@@ -783,10 +798,9 @@ impl RissApp {
                             .fill(Color32::TRANSPARENT),
                         )
                         .clicked()
-                    {
-                        self.query.clear();
-                        self.update_results();
-                    }
+                {
+                    self.query.clear();
+                    self.update_results();
                 }
             });
 

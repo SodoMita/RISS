@@ -1,10 +1,11 @@
 // Desktop binary entry point
 // On Android, the library is loaded as cdylib and android_main is called
+#![allow(dead_code)]
 
-#[cfg(not(target_os = "android"))]
-mod app_entry;
 #[cfg(target_os = "android")]
 mod android_app_entry;
+#[cfg(not(target_os = "android"))]
+mod app_entry;
 
 mod history;
 mod search;

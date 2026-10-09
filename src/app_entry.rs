@@ -102,7 +102,11 @@ fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
         } else if let Some(val) = line.strip_prefix("Icon=") {
             icon = val.to_string();
         } else if let Some(val) = line.strip_prefix("Categories=") {
-            categories = val.split(';').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
+            categories = val
+                .split(';')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
         } else if let Some(val) = line.strip_prefix("NoDisplay=") {
             no_display = val.eq_ignore_ascii_case("true");
         } else if let Some(val) = line.strip_prefix("Hidden=") {
@@ -165,7 +169,7 @@ pub fn discover_apps() -> Vec<AppEntry> {
     }
 
     // Sort by name
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by_key(|a| a.name.to_lowercase());
     entries
 }
 
@@ -179,7 +183,7 @@ fn scan_directory(dir: &Path, entries: &mut Vec<AppEntry>, seen: &mut HashMap<St
         let path = entry.path();
         if path.is_dir() {
             scan_directory(&path, entries, seen);
-        } else if path.extension().map_or(false, |ext| ext == "desktop") {
+        } else if path.extension().is_some_and(|ext| ext == "desktop") {
             if let Some(app) = parse_desktop_file(&path) {
                 let key = app.exec.clone();
                 if let Some(&idx) = seen.get(&key) {
@@ -241,7 +245,11 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             exec: "x-terminal-emulator".to_string(),
             icon: "utilities-terminal".to_string(),
             categories: vec!["System".to_string()],
-            tags: vec!["terminal".to_string(), "console".to_string(), "shell".to_string()],
+            tags: vec![
+                "terminal".to_string(),
+                "console".to_string(),
+                "shell".to_string(),
+            ],
             desktop_file: PathBuf::new(),
             launch_count: 0,
             last_launched: 0,

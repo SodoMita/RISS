@@ -1,12 +1,12 @@
 // JNI bridge for Android - reads installed apps and launches them
 
-use winit::platform::android::activity::AndroidApp;
 use jni::objects::{JObject, JValue};
 use jni::sys::{jobject, JavaVM as JavaVMPtr};
 use jni::JNIEnv;
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
+use winit::platform::android::activity::AndroidApp;
 
 use crate::android_app_entry::AppEntry;
 
@@ -127,13 +127,11 @@ pub fn discover_apps_jni() -> Vec<AppEntry> {
 }
 
 /// Process a single ApplicationInfo object
-fn process_app_info(
-    env: &mut JNIEnv,
-    pm: &JObject,
-    app_info: &JObject,
-) -> Option<AppEntry> {
+fn process_app_info(env: &mut JNIEnv, pm: &JObject, app_info: &JObject) -> Option<AppEntry> {
     // Get package name
-    let package_name_field = env.get_field(app_info, "packageName", "Ljava/lang/String;").ok()?;
+    let package_name_field = env
+        .get_field(app_info, "packageName", "Ljava/lang/String;")
+        .ok()?;
     let package_name_obj = package_name_field.l().ok()?;
     let package_name: String = env.get_string((&package_name_obj).into()).ok()?.into();
 
@@ -182,7 +180,7 @@ fn process_app_info(
 
     let category = get_app_category(env, app_info);
     let tags = build_tags_from_package(&package_name);
-    
+
     // Use package name as icon identifier (icons will be loaded lazily in UI)
     let icon_id = package_name.clone();
 
@@ -195,7 +193,11 @@ fn process_app_info(
         exec: package_name,
         icon: icon_id,
         categories: if category.is_empty() {
-            vec![if is_system { "System".to_string() } else { "Application".to_string() }]
+            vec![if is_system {
+                "System".to_string()
+            } else {
+                "Application".to_string()
+            }]
         } else {
             vec![category]
         },

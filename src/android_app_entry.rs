@@ -10,7 +10,7 @@ use std::path::PathBuf;
 pub struct AppEntry {
     pub name: String,
     pub comment: String,
-    pub exec: String,       // On Android: package name
+    pub exec: String, // On Android: package name
     pub icon: String,
     pub categories: Vec<String>,
     pub tags: Vec<String>,
