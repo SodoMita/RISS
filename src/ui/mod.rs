@@ -1032,7 +1032,7 @@ impl RissApp {
             (Key::ArrowDown, settings.gesture_down),
             (Key::ArrowLeft, settings.gesture_left),
             (Key::ArrowRight, settings.gesture_right),
-            (Key::KeyL, settings.gesture_long_press),
+            (Key::L, settings.gesture_long_press),
         ];
         for (key, action) in gesture_keys {
             if action == GestureAction::None {
@@ -2003,7 +2003,7 @@ impl RissApp {
         let width = 236.0;
         let row_height = 28.0;
         let height = items.len() as f32 * row_height + 12.0;
-        let pointer = ctx.input(|input| input.pointer.latest_pos());
+        let pointer = ctx.input(|input| input.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO));
         let screen = ctx.screen_rect();
         let mut position = pointer + Vec2::new(6.0, 6.0);
         if position.y + height > screen.bottom() - 8.0 {
@@ -2052,7 +2052,7 @@ impl RissApp {
 
         let rect = response.response.rect;
         let clicked_outside =
-            ctx.input(|input| input.pointer.any_clicked()) && !rect.contains(pointer);
+            ctx.input(|input| input.pointer.any_click()) && !rect.contains(pointer);
         let guard_passed = self
             .menu
             .as_ref()
@@ -2080,7 +2080,7 @@ impl RissApp {
             .collect();
         let mut command: Option<MenuCommand> = None;
 
-        let pointer = ctx.input(|input| input.pointer.latest_pos());
+        let pointer = ctx.input(|input| input.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO));
         let screen = ctx.screen_rect();
         let width = 9.0 * 30.0 + 16.0;
         let mut position = pointer + Vec2::new(-40.0, 24.0);
@@ -2142,7 +2142,7 @@ impl RissApp {
 
         let rect = response.response.rect;
         let clicked_outside =
-            ctx.input(|input| input.pointer.any_clicked()) && !rect.contains(pointer);
+            ctx.input(|input| input.pointer.any_click()) && !rect.contains(pointer);
         if command.is_some() || clicked_outside {
             self.shortcut_pad = None;
         }
@@ -2162,7 +2162,8 @@ impl RissApp {
         let mut save = false;
         let mut cancel = false;
 
-        let pointer = ctx.input(|input_state| input_state.pointer.latest_pos());
+        let pointer =
+            ctx.input(|input_state| input_state.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO));
         egui::Area::new(egui::Id::new("riss_tag_editor"))
             .fixed_pos(pointer + Vec2::new(-70.0, -80.0))
             .order(egui::Order::Foreground)
@@ -2213,7 +2214,8 @@ impl RissApp {
         let mut save = false;
         let mut cancel = false;
 
-        let pointer = ctx.input(|input_state| input_state.pointer.latest_pos());
+        let pointer =
+            ctx.input(|input_state| input_state.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO));
         egui::Area::new(egui::Id::new("riss_rename_editor"))
             .fixed_pos(pointer + Vec2::new(-70.0, -80.0))
             .order(egui::Order::Foreground)
