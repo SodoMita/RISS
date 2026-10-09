@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=KISS Launcher
+Name=RISS Launcher
 Comment=Minimalist application launcher
-Exec=kiss_launcher
+Exec=riss_launcher
 Icon=search
 Type=Application
 Categories=Utility;System;

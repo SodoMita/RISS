@@ -46,16 +46,16 @@ jobs:
       run: cargo build --release --verbose
     
     - name: Strip binary
-      run: strip target/release/kiss_launcher
+      run: strip target/release/riss_launcher
     
     - name: Get binary info
       run: |
-        ls -lh target/release/kiss_launcher
-        file target/release/kiss_launcher
+        ls -lh target/release/riss_launcher
+        file target/release/riss_launcher
     
     - name: Upload Linux binary
       uses: actions/upload-artifact@v4
       with:
-        name: kiss-launcher-linux
-        path: target/release/kiss_launcher
+        name: riss-launcher-linux
+        path: target/release/riss_launcher
         retention-days: 30

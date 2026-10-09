@@ -1,12 +1,12 @@
-# KISS Launcher - Android Build
+# RISS Launcher - Android Build
 
 ## APK Information
 
 ✅ **APK Built Successfully!**
 
-- **File:** `kiss-launcher.apk`
+- **File:** `riss-launcher.apk`
 - **Size:** 5.9 MB
-- **Package:** `com.kisslauncher.app`
+- **Package:** `com.risslauncher.app`
 - **Version:** 0.1.0 (versionCode: 1)
 - **Min SDK:** 21 (Android 5.0 Lollipop)
 - **Target SDK:** 33 (Android 13)
@@ -23,7 +23,7 @@
 
 2. **Connect device via USB** and install:
    ```bash
-   adb install kiss-launcher.apk
+   adb install riss-launcher.apk
    ```
 
 3. **Launch the app** from your app drawer
@@ -33,12 +33,12 @@
 1. Start an Android emulator (API 21+)
 2. Install:
    ```bash
-   adb install kiss-launcher.apk
+   adb install riss-launcher.apk
    ```
 
 ### Direct Install (if allowed)
 
-1. Copy `kiss-launcher.apk` to your device
+1. Copy `riss-launcher.apk` to your device
 2. Open the file manager and tap the APK
 3. Allow installation from unknown sources if prompted
 4. Install and launch
@@ -47,7 +47,7 @@
 
 The Android version includes:
 
-- ✅ KISS-style search bar at the bottom
+- ✅ RISS-style search bar at the bottom
 - ✅ Fuzzy search through apps
 - ✅ Favorites system
 - ✅ Usage tracking
@@ -90,12 +90,12 @@ The script will:
 ### File Structure
 
 ```
-kiss-launcher.apk
+riss-launcher.apk
 ├── AndroidManifest.xml (binary format)
 ├── lib/
-│   ├── arm64-v8a/libkiss_launcher.so (4.1 MB)
-│   ├── armeabi-v7a/libkiss_launcher.so (3.3 MB)
-│   └── x86_64/libkiss_launcher.so (4.4 MB)
+│   ├── arm64-v8a/libriss_launcher.so (4.1 MB)
+│   ├── armeabi-v7a/libriss_launcher.so (3.3 MB)
+│   └── x86_64/libriss_launcher.so (4.4 MB)
 └── META-INF/ (signatures)
 ```
 
@@ -114,7 +114,7 @@ kiss-launcher.apk
 - Try uninstalling any previous version first
 
 ### App crashes on launch
-- Check logcat for errors: `adb logcat | grep KissLauncher`
+- Check logcat for errors: `adb logcat | grep RissLauncher`
 - Ensure your device has OpenGL ES 2.0+ support
 - Try on a different device or emulator
 
@@ -129,7 +129,7 @@ For a production release, you would need to:
 
 1. **Create a release keystore:**
    ```bash
-   keytool -genkey -v -keystore release.keystore -alias kiss -keyalg RSA -keysize 2048 -validity 10000
+   keytool -genkey -v -keystore release.keystore -alias riss -keyalg RSA -keysize 2048 -validity 10000
    ```
 
 2. **Update build-apk.sh** to use your release keystore
@@ -146,7 +146,7 @@ For a production release, you would need to:
 |---------|-------|---------|
 | App Discovery | ✅ Reads .desktop files | ⚠️ Demo apps only |
 | App Launching | ✅ Uses xdg-open | ⚠️ Logs only (needs JNI) |
-| History Storage | ~/.config/kiss-launcher/ | App internal storage |
+| History Storage | ~/.config/riss-launcher/ | App internal storage |
 | Fonts | DejaVu Sans | Roboto |
 | Binary Size | 7.3 MB | 5.9 MB (multi-arch) |
 

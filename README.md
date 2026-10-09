@@ -1,12 +1,12 @@
-# KISS Launcher (Rust + egui)
+# RISS Launcher (Rust + egui)
 
-A minimalist application launcher inspired by KISS Launcher for Android, built with Rust and egui. Works on Linux and can be adapted for other platforms.
+A minimalist application launcher inspired by RISS Launcher for Android, built with Rust and egui. Works on Linux and can be adapted for other platforms.
 
-![KISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.70+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+![RISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.70+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
-✨ **Minimalist Interface** - Clean, distraction-free UI with search bar at the bottom (KISS style)
+✨ **Minimalist Interface** - Clean, distraction-free UI with search bar at the bottom (RISS style)
 
 🔍 **Fuzzy Search** - Find apps quickly with intelligent fuzzy matching
 
@@ -38,20 +38,20 @@ A minimalist application launcher inspired by KISS Launcher for Android, built w
 
 ```bash
 # Clone or download the repository
-cd kiss-launcher
+cd riss-launcher
 
 # Build the project
 cargo build --release
 
 # Run the launcher
-./target/release/kiss_launcher
+./target/release/riss_launcher
 ```
 
 ## Usage
 
 ### Basic Operation
 
-1. **Launch the app** - Run `kiss_launcher` from terminal or create a desktop shortcut
+1. **Launch the app** - Run `riss_launcher` from terminal or create a desktop shortcut
 2. **Type to search** - Start typing to search through installed applications
 3. **Navigate results** - Use ↑↓ arrow keys or mouse to select an app
 4. **Launch** - Press Enter or click on an app to launch it
@@ -95,7 +95,7 @@ cargo build --release
 
 History and favorites are stored in:
 ```
-~/.config/kiss-launcher/history.json
+~/.config/riss-launcher/history.json
 ```
 
 This file contains:
@@ -140,7 +140,7 @@ Modify the window size in `src/main.rs`:
 ### Project Structure
 
 ```
-kiss-launcher/
+riss-launcher/
 ├── src/
 │   ├── main.rs          # Entry point
 │   ├── ui.rs            # UI components and main app state
@@ -165,9 +165,9 @@ kiss-launcher/
 cargo build --release
 ```
 
-The optimized binary will be in `target/release/kiss_launcher`.
+The optimized binary will be in `target/release/riss_launcher`.
 
-## Comparison with KISS Launcher (Android)
+## Comparison with RISS Launcher (Android)
 
 | Feature | KISS Android | This Implementation |
 |---------|--------------|---------------------|
@@ -223,7 +223,7 @@ Contributions are welcome! Feel free to:
 
 ## Credits
 
-- Inspired by [KISS Launcher](https://github.com/Neamar/KISS) for Android
+- Inspired by [RISS Launcher](https://github.com/Neamar/KISS) for Android
 - Built with [egui](https://github.com/emilk/egui) - an immediate mode GUI library
 - Uses [fuzzy-matcher](https://github.com/lotabout/fuzzy-matcher) for search
 

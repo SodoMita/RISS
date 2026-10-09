@@ -1,10 +1,10 @@
 #!/bin/bash
-# Build APK for KISS Launcher using eframe 0.32+
+# Build APK for RISS Launcher using eframe 0.32+
 # This script handles the complete Android build process
 
 set -e
 
-echo "⚡ Building KISS Launcher APK (eframe 0.32+)"
+echo "⚡ Building RISS Launcher APK (eframe 0.32+)"
 echo "=============================================="
 
 # Colors for output
@@ -93,9 +93,9 @@ for arch in arm64-v8a armeabi-v7a x86_64; do
         rmdir "$APK_DIR/lib/$arch/$arch" 2>/dev/null || true
     fi
     
-    if [ -f "$APK_DIR/lib/$arch/libkiss_launcher.so" ]; then
-        SIZE=$(du -h "$APK_DIR/lib/$arch/libkiss_launcher.so" | cut -f1)
-        echo -e "  ${GREEN}✓ Built libkiss_launcher.so ($SIZE)${NC}"
+    if [ -f "$APK_DIR/lib/$arch/libriss_launcher.so" ]; then
+        SIZE=$(du -h "$APK_DIR/lib/$arch/libriss_launcher.so" | cut -f1)
+        echo -e "  ${GREEN}✓ Built libriss_launcher.so ($SIZE)${NC}"
     else
         echo -e "  ${RED}✗ Build failed for $arch${NC}"
         exit 1
@@ -114,7 +114,7 @@ cp -r "$APK_DIR/lib/"* "$BUILD_DIR/lib/"
 
 echo "  Added AndroidManifest.xml"
 for arch in arm64-v8a armeabi-v7a x86_64; do
-    echo "  Added lib/$arch/libkiss_launcher.so"
+    echo "  Added lib/$arch/libriss_launcher.so"
 done
 
 echo ""
@@ -186,7 +186,7 @@ APKSIGNER_PATH="$ANDROID_HOME/build-tools/33.0.2/apksigner"
     --ks-pass pass:android \
     --ks-key-alias androiddebugkey \
     --key-pass pass:android \
-    --out ../../kiss-launcher.apk \
+    --out ../../riss-launcher.apk \
     app-aligned.apk
 
 echo -e "${GREEN}✓ APK signed${NC}"
@@ -194,23 +194,23 @@ echo -e "${GREEN}✓ APK signed${NC}"
 echo ""
 echo "✅ Verifying APK..."
 
-"$APKSIGNER_PATH" verify --verbose ../../kiss-launcher.apk | head -5
+"$APKSIGNER_PATH" verify --verbose ../../riss-launcher.apk | head -5
 
 echo ""
 echo "📋 APK contents:"
-unzip -l ../../kiss-launcher.apk | head -15
+unzip -l ../../riss-launcher.apk | head -15
 
 echo ""
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}✅ APK built successfully!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
-echo "📁 Location: $(pwd)/../../kiss-launcher.apk"
-echo "📏 Size: $(du -h ../../kiss-launcher.apk | cut -f1)"
+echo "📁 Location: $(pwd)/../../riss-launcher.apk"
+echo "📏 Size: $(du -h ../../riss-launcher.apk | cut -f1)"
 echo ""
 echo "To install:"
-echo "  adb install kiss-launcher.apk"
+echo "  adb install riss-launcher.apk"
 echo ""
 echo "To view logs:"
-echo "  adb logcat | grep KissLauncher"
+echo "  adb logcat | grep RissLauncher"
 echo ""

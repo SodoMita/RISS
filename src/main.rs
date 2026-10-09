@@ -20,11 +20,11 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "KISS Launcher",
+        "RISS Launcher",
         native_options,
         Box::new(|cc| {
             ui::setup_fonts(&cc.egui_ctx);
-            Ok(Box::new(ui::KissApp::new(cc)))
+            Ok(Box::new(ui::RissApp::new(cc)))
         }),
     )
 }

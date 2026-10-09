@@ -1,15 +1,15 @@
 #!/bin/bash
-# KISS Launcher Install Script
-# Installs the KISS Launcher binary and desktop file
+# RISS Launcher Install Script
+# Installs the RISS Launcher binary and desktop file
 
 set -e
 
 INSTALL_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
-BINARY="target/release/kiss_launcher"
-DESKTOP="kiss-launcher.desktop"
+BINARY="target/release/riss_launcher"
+DESKTOP="riss-launcher.desktop"
 
-echo "⚡ KISS Launcher Installer"
+echo "⚡ RISS Launcher Installer"
 echo "========================="
 
 # Build if needed
@@ -24,8 +24,8 @@ mkdir -p "$APP_DIR"
 
 # Copy binary
 echo "📁 Installing binary to $INSTALL_DIR..."
-cp "$BINARY" "$INSTALL_DIR/kiss_launcher"
-chmod +x "$INSTALL_DIR/kiss_launcher"
+cp "$BINARY" "$INSTALL_DIR/riss_launcher"
+chmod +x "$INSTALL_DIR/riss_launcher"
 
 # Copy desktop file
 echo "📁 Installing desktop entry..."
@@ -45,13 +45,13 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo ""
-echo "✅ KISS Launcher installed successfully!"
+echo "✅ RISS Launcher installed successfully!"
 echo ""
 echo "You can now:"
-echo "  • Run 'kiss_launcher' from terminal"
-echo "  • Find 'KISS Launcher' in your application menu"
+echo "  • Run 'riss_launcher' from terminal"
+echo "  • Find 'RISS Launcher' in your application menu"
 echo "  • Set it as your default launcher (if your DE supports it)"
 echo ""
 echo "To uninstall:"
-echo "  rm $INSTALL_DIR/kiss_launcher"
-echo "  rm $APP_DIR/kiss-launcher.desktop"
+echo "  rm $INSTALL_DIR/riss_launcher"
+echo "  rm $APP_DIR/riss-launcher.desktop"

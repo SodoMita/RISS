@@ -1,6 +1,6 @@
-# KISS Launcher - Android Version
+# RISS Launcher - Android Version
 
-A KISS-style launcher for Android built with Rust and eframe.
+A RISS-style launcher for Android built with Rust and eframe.
 
 ## ✅ What Was Fixed
 
@@ -44,7 +44,7 @@ A KISS-style launcher for Android built with Rust and eframe.
 Run the master build script:
 
 ```bash
-cd /home/user/kiss-launcher
+cd /home/user/riss-launcher
 ./MASTER-BUILD.sh
 ```
 
@@ -52,14 +52,14 @@ The script will:
 1. Install Rust, Java 17, Android SDK, NDK, build-tools (if not present)
 2. Build native libraries for arm64-v8a, armeabi-v7a, x86_64
 3. Package, align, and sign the APK
-4. Output: `kiss-launcher-FINAL.apk`
+4. Output: `riss-launcher-FINAL.apk`
 
 **Build time:** ~10-15 minutes (first run), ~5 minutes (subsequent runs)
 
 ## 📲 Installation
 
 ```bash
-adb install kiss-launcher-FINAL.apk
+adb install riss-launcher-FINAL.apk
 ```
 
 Or transfer to your device and install manually (enable "Install from unknown sources").
@@ -69,23 +69,23 @@ Or transfer to your device and install manually (enable "Install from unknown so
 View logs in real-time:
 
 ```bash
-adb logcat | grep KissLauncher
+adb logcat | grep RissLauncher
 ```
 
 Expected output on successful launch:
 ```
-KissLauncher: android_main called
-KissLauncher: Storing AndroidApp for JNI calls
-KissLauncher: Starting eframe with Android support
-KissLauncher: eframe creation callback called
-KissLauncher: Found X installed applications
-KissLauncher: Processed Y launchable applications
+RissLauncher: android_main called
+RissLauncher: Storing AndroidApp for JNI calls
+RissLauncher: Starting eframe with Android support
+RissLauncher: eframe creation callback called
+RissLauncher: Found X installed applications
+RissLauncher: Processed Y launchable applications
 ```
 
 ## 📂 Project Structure
 
 ```
-kiss-launcher/
+riss-launcher/
 ├── MASTER-BUILD.sh          # Complete build script
 ├── Cargo.toml               # eframe 0.32+ configuration
 ├── android/
@@ -121,7 +121,7 @@ winit event loop starts
     ↓
 OpenGL context created
     ↓
-KissApp::new() called
+RissApp::new() called
     ↓
 discover_apps_jni() reads installed apps via PackageManager
     ↓
@@ -157,7 +157,7 @@ winit = { version = "0.30", features = ["android-native-activity"] }
     <activity android:name="android.app.NativeActivity">
         <!-- CRITICAL: must match [lib] name exactly -->
         <meta-data android:name="android.app.lib_name" 
-                   android:value="kiss_launcher" />
+                   android:value="riss_launcher" />
     </activity>
 </application>
 ```
@@ -165,7 +165,7 @@ winit = { version = "0.30", features = ["android-native-activity"] }
 ## 🐛 Troubleshooting
 
 ### App crashes immediately
-1. Check logs: `adb logcat | grep KissLauncher`
+1. Check logs: `adb logcat | grep RissLauncher`
 2. Look for PANIC messages (we added a panic hook)
 3. Verify NDK version is exactly 25.2.9519653
 4. Ensure `android.app.lib_name` in manifest matches lib name exactly

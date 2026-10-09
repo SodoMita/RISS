@@ -1,4 +1,4 @@
-# KISS Launcher - Android APK Built Successfully! 🎉
+# RISS Launcher - Android APK Built Successfully! 🎉
 
 ## APK Details
 
@@ -72,19 +72,19 @@ The app requests `QUERY_ALL_PACKAGES` permission to see all installed apps on An
 
 ### Option 1: ADB Install (Recommended)
 ```bash
-cd /home/user/kiss-launcher
-adb install target/kiss-launcher.apk
+cd /home/user/riss-launcher
+adb install target/riss-launcher.apk
 ```
 
 ### Option 2: Direct Install
-1. Copy `target/kiss-launcher.apk` to your Android device
+1. Copy `target/riss-launcher.apk` to your Android device
 2. Open the file and install
 3. Grant permissions when prompted
 
 ### Option 3: Set as Default Launcher
-After installation, you can set KISS Launcher as your default home screen:
+After installation, you can set RISS Launcher as your default home screen:
 1. Go to Settings → Apps → Default apps → Home app
-2. Select "KISS Launcher"
+2. Select "RISS Launcher"
 
 ## Building from Source
 
@@ -103,7 +103,7 @@ export NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653
 export PATH="/path/to/.cargo/bin:$PATH"
 
 # Build APK
-cd /home/user/kiss-launcher
+cd /home/user/riss-launcher
 ./build-apk.sh
 ```
 
@@ -116,17 +116,17 @@ The script will:
 ## APK Structure
 
 ```
-kiss-launcher.apk (5.9 MB)
+riss-launcher.apk (5.9 MB)
 ├── AndroidManifest.xml (3.3 KB)
-│   - Package: com.kisslauncher.app
+│   - Package: com.risslauncher.app
 │   - Min SDK: 21, Target SDK: 33
 │   - Permissions: QUERY_ALL_PACKAGES, INTERNET
 │   - NativeActivity configuration
 │
 ├── lib/
-│   ├── arm64-v8a/libkiss_launcher.so (4.1 MB)
-│   ├── armeabi-v7a/libkiss_launcher.so (3.3 MB)
-│   └── x86_64/libkiss_launcher.so (4.4 MB)
+│   ├── arm64-v8a/libriss_launcher.so (4.1 MB)
+│   ├── armeabi-v7a/libriss_launcher.so (3.3 MB)
+│   └── x86_64/libriss_launcher.so (4.4 MB)
 │
 └── META-INF/
     ├── MANIFEST.MF
@@ -153,7 +153,7 @@ kiss-launcher.apk (5.9 MB)
    - Launches egui application
 
 4. **`ui.rs`** - Cross-platform UI (shared with Linux version)
-   - KISS-style search interface
+   - RISS-style search interface
    - Fuzzy search implementation
    - Favorites and history management
 
@@ -169,10 +169,10 @@ The code carefully manages JNI references:
 ### App doesn't show any apps
 - Make sure you granted the QUERY_ALL_PACKAGES permission
 - On Android 11+, this permission is required to see all installed apps
-- Go to Settings → Apps → KISS Launcher → Permissions → Allow "Display over other apps"
+- Go to Settings → Apps → RISS Launcher → Permissions → Allow "Display over other apps"
 
 ### App crashes on launch
-- Check logcat for errors: `adb logcat | grep kiss_launcher`
+- Check logcat for errors: `adb logcat | grep riss_launcher`
 - Ensure your device supports OpenGL ES 2.0+
 - Try on a different device or emulator
 
@@ -181,7 +181,7 @@ The code carefully manages JNI references:
 - Verify NDK version is 25.2.9519653
 - Check that JAVA_HOME points to JDK 17
 
-## Comparison with Original KISS Launcher
+## Comparison with Original RISS Launcher
 
 | Feature | Original KISS (Android) | This Implementation |
 |---------|------------------------|---------------------|
@@ -210,7 +210,7 @@ Potential improvements for future versions:
 
 ## License
 
-This is a demonstration project showing how to build Android apps with Rust and egui. The KISS Launcher concept is inspired by the original KISS Launcher (https://github.com/Neamar/KISS).
+This is a demonstration project showing how to build Android apps with Rust and egui. The RISS Launcher concept is inspired by the original RISS Launcher (https://github.com/Neamar/KISS).
 
 ## Credits
 

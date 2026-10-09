@@ -5,7 +5,7 @@
 set -e
 
 echo "=========================================="
-echo "KISS Launcher - Master Build Script"
+echo "RISS Launcher - Master Build Script"
 echo "=========================================="
 echo "This will install all dependencies and build the APK"
 echo "Estimated time: 10-15 minutes"
@@ -155,7 +155,7 @@ success "Build environment ready"
 # ============================================================================
 log "Step 8/10: Building native libraries..."
 log "  Building for arm64-v8a..."
-cargo ndk -t arm64-v8a -o target/android/lib/arm64-v8a build --release 2>&1 | grep -E "(Compiling kiss_launcher|Finished)" || true
+cargo ndk -t arm64-v8a -o target/android/lib/arm64-v8a build --release 2>&1 | grep -E "(Compiling riss_launcher|Finished)" || true
 
 # Fix nested directory
 if [ -d "target/android/lib/arm64-v8a/arm64-v8a" ]; then
@@ -163,39 +163,39 @@ if [ -d "target/android/lib/arm64-v8a/arm64-v8a" ]; then
     rmdir target/android/lib/arm64-v8a/arm64-v8a 2>/dev/null || true
 fi
 
-if [ ! -f "target/android/lib/arm64-v8a/libkiss_launcher.so" ]; then
+if [ ! -f "target/android/lib/arm64-v8a/libriss_launcher.so" ]; then
     error "Build failed for arm64-v8a"
 fi
-SIZE=$(du -h target/android/lib/arm64-v8a/libkiss_launcher.so | cut -f1)
-success "arm64-v8a: libkiss_launcher.so ($SIZE)"
+SIZE=$(du -h target/android/lib/arm64-v8a/libriss_launcher.so | cut -f1)
+success "arm64-v8a: libriss_launcher.so ($SIZE)"
 
 log "  Building for armeabi-v7a..."
-cargo ndk -t armeabi-v7a -o target/android/lib/armeabi-v7a build --release 2>&1 | grep -E "(Compiling kiss_launcher|Finished)" || true
+cargo ndk -t armeabi-v7a -o target/android/lib/armeabi-v7a build --release 2>&1 | grep -E "(Compiling riss_launcher|Finished)" || true
 
 if [ -d "target/android/lib/armeabi-v7a/armeabi-v7a" ]; then
     mv target/android/lib/armeabi-v7a/armeabi-v7a/*.so target/android/lib/armeabi-v7a/ 2>/dev/null || true
     rmdir target/android/lib/armeabi-v7a/armeabi-v7a 2>/dev/null || true
 fi
 
-if [ ! -f "target/android/lib/armeabi-v7a/libkiss_launcher.so" ]; then
+if [ ! -f "target/android/lib/armeabi-v7a/libriss_launcher.so" ]; then
     error "Build failed for armeabi-v7a"
 fi
-SIZE=$(du -h target/android/lib/armeabi-v7a/libkiss_launcher.so | cut -f1)
-success "armeabi-v7a: libkiss_launcher.so ($SIZE)"
+SIZE=$(du -h target/android/lib/armeabi-v7a/libriss_launcher.so | cut -f1)
+success "armeabi-v7a: libriss_launcher.so ($SIZE)"
 
 log "  Building for x86_64..."
-cargo ndk -t x86_64 -o target/android/lib/x86_64 build --release 2>&1 | grep -E "(Compiling kiss_launcher|Finished)" || true
+cargo ndk -t x86_64 -o target/android/lib/x86_64 build --release 2>&1 | grep -E "(Compiling riss_launcher|Finished)" || true
 
 if [ -d "target/android/lib/x86_64/x86_64" ]; then
     mv target/android/lib/x86_64/x86_64/*.so target/android/lib/x86_64/ 2>/dev/null || true
     rmdir target/android/lib/x86_64/x86_64 2>/dev/null || true
 fi
 
-if [ ! -f "target/android/lib/x86_64/libkiss_launcher.so" ]; then
+if [ ! -f "target/android/lib/x86_64/libriss_launcher.so" ]; then
     error "Build failed for x86_64"
 fi
-SIZE=$(du -h target/android/lib/x86_64/libkiss_launcher.so | cut -f1)
-success "x86_64: libkiss_launcher.so ($SIZE)"
+SIZE=$(du -h target/android/lib/x86_64/libriss_launcher.so | cut -f1)
+success "x86_64: libriss_launcher.so ($SIZE)"
 
 # ============================================================================
 # STEP 9: Package APK
@@ -258,13 +258,13 @@ APKSIGNER="$ANDROID_HOME/build-tools/33.0.2/apksigner"
     --ks-pass pass:android \
     --ks-key-alias androiddebugkey \
     --key-pass pass:android \
-    --out "$PROJECT_DIR/kiss-launcher-FINAL.apk" \
+    --out "$PROJECT_DIR/riss-launcher-FINAL.apk" \
     app-aligned.apk > /dev/null 2>&1
 
 success "APK signed"
 
 # Verify
-"$APKSIGNER" verify "$PROJECT_DIR/kiss-launcher-FINAL.apk" > /dev/null 2>&1 || error "APK verification failed"
+"$APKSIGNER" verify "$PROJECT_DIR/riss-launcher-FINAL.apk" > /dev/null 2>&1 || error "APK verification failed"
 success "APK verified"
 
 # ============================================================================
@@ -282,17 +282,17 @@ echo "=========================================="
 echo -e "${GREEN}✓ BUILD COMPLETE!${NC}"
 echo "=========================================="
 echo ""
-echo "APK Location: $PROJECT_DIR/kiss-launcher-FINAL.apk"
-echo "APK Size:     $(du -h kiss-launcher-FINAL.apk | cut -f1)"
+echo "APK Location: $PROJECT_DIR/riss-launcher-FINAL.apk"
+echo "APK Size:     $(du -h riss-launcher-FINAL.apk | cut -f1)"
 echo "Build Time:   ${MINUTES}m ${SECONDS}s"
 echo ""
 echo "APK Contents:"
-unzip -l kiss-launcher-FINAL.apk | grep -E "(AndroidManifest|\.so)" | awk '{print "  " $4 " (" $1 " bytes)"}'
+unzip -l riss-launcher-FINAL.apk | grep -E "(AndroidManifest|\.so)" | awk '{print "  " $4 " (" $1 " bytes)"}'
 echo ""
 echo "To install:"
-echo "  adb install kiss-launcher-FINAL.apk"
+echo "  adb install riss-launcher-FINAL.apk"
 echo ""
 echo "To view logs:"
-echo "  adb logcat | grep KissLauncher"
+echo "  adb logcat | grep RissLauncher"
 echo ""
 echo "=========================================="

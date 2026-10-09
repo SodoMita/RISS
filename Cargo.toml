@@ -1,5 +1,5 @@
 [package]
-name = "kiss_launcher"
+name = "riss_launcher"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "kiss_launcher"
+name = "riss_launcher"
 path = "src/main.rs"
 
 [dependencies]

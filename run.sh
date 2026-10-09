@@ -1,27 +1,27 @@
 #!/bin/bash
-# Quick start script for KISS Launcher
+# Quick start script for RISS Launcher
 
 set -e
 
-echo "⚡ KISS Launcher - Quick Start"
+echo "⚡ RISS Launcher - Quick Start"
 echo "=============================="
 echo ""
 
 # Check if binary exists
-if [ -f "target/release/kiss_launcher" ]; then
+if [ -f "target/release/riss_launcher" ]; then
     echo "✅ Release build found"
-    BINARY="target/release/kiss_launcher"
-elif [ -f "target/debug/kiss_launcher" ]; then
+    BINARY="target/release/riss_launcher"
+elif [ -f "target/debug/riss_launcher" ]; then
     echo "⚠️  Debug build found (consider running 'cargo build --release' for better performance)"
-    BINARY="target/debug/kiss_launcher"
+    BINARY="target/debug/riss_launcher"
 else
     echo "📦 Building project..."
     cargo build --release
-    BINARY="target/release/kiss_launcher"
+    BINARY="target/release/riss_launcher"
 fi
 
 echo ""
-echo "🚀 Launching KISS Launcher..."
+echo "🚀 Launching RISS Launcher..."
 echo ""
 echo "Tips:"
 echo "  • Type to search for apps"

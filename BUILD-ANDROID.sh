@@ -1,11 +1,11 @@
 #!/bin/bash
-# Complete KISS Launcher Android Build Script
+# Complete RISS Launcher Android Build Script
 # This script sets up everything needed and builds the APK
 
 set -e
 
 echo "=========================================="
-echo "KISS Launcher - Complete Android Build"
+echo "RISS Launcher - Complete Android Build"
 echo "=========================================="
 echo ""
 
@@ -167,13 +167,13 @@ for arch in arm64-v8a armeabi-v7a x86_64; do
         rmdir "target/android/lib/$arch/$arch" 2>/dev/null || true
     fi
     
-    if [ ! -f "target/android/lib/$arch/libkiss_launcher.so" ]; then
+    if [ ! -f "target/android/lib/$arch/libriss_launcher.so" ]; then
         log_error "Build failed for $arch"
         exit 1
     fi
     
-    SIZE=$(du -h "target/android/lib/$arch/libkiss_launcher.so" | cut -f1)
-    log_success "  Built libkiss_launcher.so ($SIZE)"
+    SIZE=$(du -h "target/android/lib/$arch/libriss_launcher.so" | cut -f1)
+    log_success "  Built libriss_launcher.so ($SIZE)"
 done
 
 # Step 9: Package APK
@@ -229,26 +229,26 @@ APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
     --ks-pass pass:android \
     --ks-key-alias androiddebugkey \
     --key-pass pass:android \
-    --out "$PROJECT_DIR/kiss-launcher-v3.apk" \
+    --out "$PROJECT_DIR/riss-launcher-v3.apk" \
     app-aligned.apk
 
 log_success "APK signed"
 
 # Step 12: Verify
 log_info "Step 12: Verifying APK..."
-"$APKSIGNER" verify --verbose "$PROJECT_DIR/kiss-launcher-v3.apk" | head -5
+"$APKSIGNER" verify --verbose "$PROJECT_DIR/riss-launcher-v3.apk" | head -5
 
 echo ""
 echo "=========================================="
 log_success "BUILD COMPLETE!"
 echo "=========================================="
 echo ""
-echo "APK Location: $PROJECT_DIR/kiss-launcher-v3.apk"
-echo "APK Size: $(du -h "$PROJECT_DIR/kiss-launcher-v3.apk" | cut -f1)"
+echo "APK Location: $PROJECT_DIR/riss-launcher-v3.apk"
+echo "APK Size: $(du -h "$PROJECT_DIR/riss-launcher-v3.apk" | cut -f1)"
 echo ""
 echo "To install:"
-echo "  adb install kiss-launcher-v3.apk"
+echo "  adb install riss-launcher-v3.apk"
 echo ""
 echo "To view logs:"
-echo "  adb logcat | grep KissLauncher"
+echo "  adb logcat | grep RissLauncher"
 echo ""

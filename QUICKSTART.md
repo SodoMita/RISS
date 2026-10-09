@@ -1,10 +1,10 @@
-# KISS Launcher - Quick Start Guide
+# RISS Launcher - Quick Start Guide
 
 ## First Run
 
 1. **Build the project:**
    ```bash
-   cd kiss-launcher
+   cd riss-launcher
    cargo build --release
    ```
 
@@ -12,7 +12,7 @@
    ```bash
    ./run.sh
    # or directly:
-   ./target/release/kiss_launcher
+   ./target/release/riss_launcher
    ```
 
 ## Basic Usage
@@ -54,7 +54,7 @@ Type math expressions:
 
 ## File Locations
 
-- **History & Favorites:** `~/.config/kiss-launcher/history.json`
+- **History & Favorites:** `~/.config/riss-launcher/history.json`
 - **App Discovery:** Scans `/usr/share/applications` and `~/.local/share/applications`
 
 ## Tips & Tricks
@@ -94,7 +94,7 @@ To install system-wide:
 ```
 
 This will:
-- Copy binary to `~/.local/bin/kiss_launcher`
+- Copy binary to `~/.local/bin/riss_launcher`
 - Add desktop entry to `~/.local/share/applications/`
 - Make it available in your app menu
 

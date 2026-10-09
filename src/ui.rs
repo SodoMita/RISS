@@ -7,7 +7,7 @@ use crate::search::{self, MatchType, SearchEngine, SearchResult};
 use eframe::egui;
 use egui::{Color32, CornerRadius, FontId, RichText, Stroke, Vec2};
 
-/// KISS color scheme
+/// RISS color scheme
 struct Colors;
 
 impl Colors {
@@ -26,7 +26,7 @@ impl Colors {
 }
 
 /// Main application state
-pub struct KissApp {
+pub struct RissApp {
     /// Search query
     query: String,
     /// All discovered applications
@@ -48,7 +48,7 @@ pub struct KissApp {
     tag_input: String,
 }
 
-impl KissApp {
+impl RissApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let history = HistoryData::load();
         let mut apps = app_entry::discover_apps();
@@ -74,7 +74,7 @@ impl KissApp {
 
         let search_engine = SearchEngine::new();
 
-        let mut kiss = Self {
+        let mut riss = Self {
             query: String::new(),
             apps,
             results: Vec::new(),
@@ -87,8 +87,8 @@ impl KissApp {
             tag_input: String::new(),
         };
 
-        kiss.update_results();
-        kiss
+        riss.update_results();
+        riss
     }
 
     fn update_results(&mut self) {
@@ -291,7 +291,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
     let _ = ctx.set_fonts(fonts);
 }
 
-impl eframe::App for KissApp {
+impl eframe::App for RissApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Apply dark theme
         let mut visuals = egui::Visuals::dark();
@@ -319,7 +319,7 @@ impl eframe::App for KissApp {
             }
         }
 
-        // Main layout: Top area with results, bottom area with search bar (KISS style)
+        // Main layout: Top area with results, bottom area with search bar (RISS style)
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
@@ -328,7 +328,7 @@ impl eframe::App for KissApp {
                     ui.horizontal_centered(|ui| {
                         ui.add_space(12.0);
                         ui.label(
-                            RichText::new("⚡ KISS")
+                            RichText::new("⚡ RISS")
                                 .color(Colors::ACCENT)
                                 .font(FontId::proportional(18.0))
                                 .strong(),
@@ -380,7 +380,7 @@ impl eframe::App for KissApp {
                         self.show_results(ui);
                     });
 
-                // Bottom: Search bar (KISS style - at the bottom)
+                // Bottom: Search bar (RISS style - at the bottom)
                 ui.allocate_ui(Vec2::new(ui.available_width(), 120.0), |ui| {
                     ui.add_space(8.0);
                     self.show_search_bar(ui, ctx);
@@ -402,7 +402,7 @@ impl eframe::App for KissApp {
     }
 }
 
-impl KissApp {
+impl RissApp {
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
         // Handle keyboard input
         let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));

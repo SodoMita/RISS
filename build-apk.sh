@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build APK for KISS Launcher
+# Build APK for RISS Launcher
 
 set -e
 
@@ -13,7 +13,7 @@ BUILD_DIR="$PROJECT_DIR/target/android-build"
 APK_DIR="$PROJECT_DIR/target/android"
 MANIFEST="$PROJECT_DIR/android/AndroidManifest.xml"
 
-echo "⚡ Building KISS Launcher APK"
+echo "⚡ Building RISS Launcher APK"
 echo "=============================="
 
 # Clean previous build
@@ -50,10 +50,10 @@ mkdir -p "$BUILD_DIR/apk-contents/lib"
 
 # Copy native libraries only (manifest is added by aapt -M flag)
 for arch in arm64-v8a armeabi-v7a x86_64; do
-    if [ -f "$APK_DIR/lib/$arch/libkiss_launcher.so" ]; then
+    if [ -f "$APK_DIR/lib/$arch/libriss_launcher.so" ]; then
         mkdir -p "$BUILD_DIR/apk-contents/lib/$arch"
-        cp "$APK_DIR/lib/$arch/libkiss_launcher.so" "$BUILD_DIR/apk-contents/lib/$arch/"
-        echo "  Added lib/$arch/libkiss_launcher.so ($(du -h "$APK_DIR/lib/$arch/libkiss_launcher.so" | cut -f1))"
+        cp "$APK_DIR/lib/$arch/libriss_launcher.so" "$BUILD_DIR/apk-contents/lib/$arch/"
+        echo "  Added lib/$arch/libriss_launcher.so ($(du -h "$APK_DIR/lib/$arch/libriss_launcher.so" | cut -f1))"
     fi
 done
 
@@ -100,23 +100,23 @@ apksigner sign \
     --ks-pass pass:android \
     --ks-key-alias androiddebugkey \
     --key-pass pass:android \
-    --out "$PROJECT_DIR/target/kiss-launcher.apk" \
+    --out "$PROJECT_DIR/target/riss-launcher.apk" \
     app-aligned.apk
 
 # Step 7: Verify APK
 echo "✅ Verifying APK..."
-apksigner verify --verbose "$PROJECT_DIR/target/kiss-launcher.apk" 2>&1 | head -5
+apksigner verify --verbose "$PROJECT_DIR/target/riss-launcher.apk" 2>&1 | head -5
 
 # Show APK contents
 echo ""
 echo "📋 APK contents:"
-unzip -l "$PROJECT_DIR/target/kiss-launcher.apk" | head -20
+unzip -l "$PROJECT_DIR/target/riss-launcher.apk" | head -20
 
 echo ""
 echo "🎉 APK built successfully!"
-echo "   Location: $PROJECT_DIR/target/kiss-launcher.apk"
-echo "   Size: $(du -h "$PROJECT_DIR/target/kiss-launcher.apk" | cut -f1)"
+echo "   Location: $PROJECT_DIR/target/riss-launcher.apk"
+echo "   Size: $(du -h "$PROJECT_DIR/target/riss-launcher.apk" | cut -f1)"
 echo ""
 echo "To install on a device:"
-echo "  adb install target/kiss-launcher.apk"
+echo "  adb install target/riss-launcher.apk"
 echo ""

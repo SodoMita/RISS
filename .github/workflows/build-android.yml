@@ -140,24 +140,24 @@ jobs:
           --ks-pass pass:android \
           --ks-key-alias androiddebugkey \
           --key-pass pass:android \
-          --out kiss-launcher.apk \
+          --out riss-launcher.apk \
           target/apk-build/app-aligned.apk
     
     - name: Verify APK
       run: |
         APKSIGNER="$ANDROID_HOME/build-tools/33.0.2/apksigner"
-        "$APKSIGNER" verify --verbose kiss-launcher.apk
+        "$APKSIGNER" verify --verbose riss-launcher.apk
     
     - name: Get APK info
       run: |
-        ls -lh kiss-launcher.apk
+        ls -lh riss-launcher.apk
         AAPT="$ANDROID_HOME/build-tools/33.0.2/aapt"
-        "$AAPT" dump badging kiss-launcher.apk | head -20
-        unzip -l kiss-launcher.apk
+        "$AAPT" dump badging riss-launcher.apk | head -20
+        unzip -l riss-launcher.apk
     
     - name: Upload Android APK
       uses: actions/upload-artifact@v4
       with:
-        name: kiss-launcher-android
-        path: kiss-launcher.apk
+        name: riss-launcher-android
+        path: riss-launcher.apk
         retention-days: 30

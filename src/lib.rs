@@ -1,4 +1,4 @@
-// KISS Launcher - Android entry point
+// RISS Launcher - Android entry point
 // Uses eframe 0.32+ official Android support
 
 #[cfg(target_os = "android")]
@@ -23,10 +23,10 @@ fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(LevelFilter::Debug)
-            .with_tag("KissLauncher"),
+            .with_tag("RissLauncher"),
     );
 
-    log::info!("KISS Launcher: android_main called");
+    log::info!("RISS Launcher: android_main called");
 
     // Set panic hook to log panics
     std::panic::set_hook(Box::new(|info| {
@@ -50,12 +50,12 @@ fn android_main(app: AndroidApp) {
 
     // Run the app
     if let Err(e) = eframe::run_native(
-        "KISS Launcher",
+        "RISS Launcher",
         options,
         Box::new(|cc| {
             log::info!("eframe creation callback called");
             ui::setup_fonts(&cc.egui_ctx);
-            Ok(Box::new(ui::KissApp::new(cc)))
+            Ok(Box::new(ui::RissApp::new(cc)))
         }),
     ) {
         log::error!("eframe failed: {:?}", e);
@@ -73,11 +73,11 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "KISS Launcher",
+        "RISS Launcher",
         native_options,
         Box::new(|cc| {
             ui::setup_fonts(&cc.egui_ctx);
-            Ok(Box::new(ui::KissApp::new(cc)))
+            Ok(Box::new(ui::RissApp::new(cc)))
         }),
     )
 }

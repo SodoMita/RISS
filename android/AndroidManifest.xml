@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.kisslauncher.app"
+    package="com.risslauncher.app"
     android:versionCode="1"
     android:versionName="0.1.0">
 
@@ -20,19 +20,19 @@
         android:required="false" />
 
     <application
-        android:label="KISS Launcher"
+        android:label="RISS Launcher"
         android:hasCode="false">
         
         <activity
             android:name="android.app.NativeActivity"
-            android:label="KISS Launcher"
+            android:label="RISS Launcher"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:exported="true">
             
             <!-- CRITICAL: lib_name must match [lib] name in Cargo.toml exactly -->
             <meta-data
                 android:name="android.app.lib_name"
-                android:value="kiss_launcher" />
+                android:value="riss_launcher" />
             
             <!-- Main launcher intent -->
             <intent-filter>

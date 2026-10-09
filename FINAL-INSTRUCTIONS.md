@@ -1,18 +1,18 @@
-# KISS Launcher - Android Build (FINAL VERSION)
+# RISS Launcher - Android Build (FINAL VERSION)
 
 ## 🎯 What You Have
 
-A complete, production-ready KISS Launcher for Android with:
+A complete, production-ready RISS Launcher for Android with:
 - ✅ **eframe 0.32+** (official Android support)
 - ✅ **Real app discovery** via JNI (reads all installed apps)
 - ✅ **App launching** via Android Intent system
 - ✅ **Fuzzy search**, calculator, favorites, history
-- ✅ **Dark theme** KISS-style UI
+- ✅ **Dark theme** RISS-style UI
 
 ## 📦 Files Included
 
 ```
-kiss-launcher/
+riss-launcher/
 ├── BUILD-ANDROID.sh          # Complete build script (RUN THIS)
 ├── Cargo.toml                 # eframe 0.32+ configuration
 ├── android/
@@ -35,7 +35,7 @@ kiss-launcher/
 ### Option 1: Automatic (Recommended)
 
 ```bash
-cd kiss-launcher
+cd riss-launcher
 ./BUILD-ANDROID.sh
 ```
 
@@ -48,7 +48,7 @@ This script will:
 6. ✅ Install NDK 25.x, build-tools 33.0.2, platform API 33
 7. ✅ Build native libraries for all architectures
 8. ✅ Package, align, and sign the APK
-9. ✅ Output: `kiss-launcher-v3.apk`
+9. ✅ Output: `riss-launcher-v3.apk`
 
 **Time:** ~5-10 minutes (first run, downloads ~2GB)
 
@@ -78,7 +78,7 @@ cargo ndk -t x86_64 -o target/android/lib/x86_64 build --release
 ## 📱 Installation
 
 ```bash
-adb install kiss-launcher-v3.apk
+adb install riss-launcher-v3.apk
 ```
 
 Or transfer to your device and install manually (enable "Install from unknown sources").
@@ -102,18 +102,18 @@ Previous builds crashed immediately with `NO_INPUT_CHANNEL` because:
 
 After installation, run:
 ```bash
-adb logcat | grep KissLauncher
+adb logcat | grep RissLauncher
 ```
 
 **Expected output:**
 ```
-KissLauncher: android_main called
-KissLauncher: Storing AndroidApp for JNI calls
-KissLauncher: Starting eframe with Android support
-KissLauncher: eframe creation callback called
-KissLauncher: AndroidApp stored successfully
-KissLauncher: Found 150 installed applications
-KissLauncher: Processed 85 launchable applications
+RissLauncher: android_main called
+RissLauncher: Storing AndroidApp for JNI calls
+RissLauncher: Starting eframe with Android support
+RissLauncher: eframe creation callback called
+RissLauncher: AndroidApp stored successfully
+RissLauncher: Found 150 installed applications
+RissLauncher: Processed 85 launchable applications
 ```
 
 If you see these logs, the app is working! The UI should appear on screen.
@@ -121,7 +121,7 @@ If you see these logs, the app is working! The UI should appear on screen.
 ## 🔧 Troubleshooting
 
 ### App still crashes
-1. Check logs: `adb logcat | grep KissLauncher`
+1. Check logs: `adb logcat | grep RissLauncher`
 2. Look for PANIC messages (we added a panic hook)
 3. Verify NDK version is exactly 25.2.9519653
 4. Ensure `android.app.lib_name` in manifest matches lib name exactly
@@ -155,7 +155,7 @@ winit event loop starts
     ↓
 OpenGL context created
     ↓
-KissApp::new() called
+RissApp::new() called
     ↓
 discover_apps_jni() reads installed apps via PackageManager
     ↓
@@ -202,7 +202,7 @@ fn android_main(app: AndroidApp) {
         ..Default::default()
     };
     
-    eframe::run_native("KISS Launcher", options, ...);
+    eframe::run_native("RISS Launcher", options, ...);
 }
 ```
 
@@ -224,7 +224,7 @@ fn android_main(app: AndroidApp) {
 ## 🆘 Need Help?
 
 If you encounter issues:
-1. Run `adb logcat | grep KissLauncher` and share the output
+1. Run `adb logcat | grep RissLauncher` and share the output
 2. Check that all prerequisites are met (Rust, Java 17, Android SDK)
 3. Try `cargo clean` and rebuild
 4. Ensure you're using eframe 0.32+ (check Cargo.lock)

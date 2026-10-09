@@ -35,7 +35,7 @@ impl HistoryData {
                 PathBuf::from(".")
             };
             path.push(".config");
-            path.push("kiss-launcher");
+            path.push("riss-launcher");
             fs::create_dir_all(&path).ok();
             path.push("history.json");
             path

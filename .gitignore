@@ -1,1 +1,334 @@
-/target
+# ============================================================================
+# RISS Launcher - Comprehensive .gitignore
+# ============================================================================
+
+# ============================================================================
+# Rust / Cargo
+# ============================================================================
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+!Cargo.lock
+
+# Cargo build artifacts
+**/target/
+debug/
+release/
+deps/
+build/
+examples/
+incremental/
+
+# Cargo registry and cache
+.cargo/
+.cargo-ok
+
+# ============================================================================
+# Android Build Artifacts
+# ============================================================================
+*.apk
+*.apks
+*.aab
+*.idsig
+*.dex
+*.class
+
+# Android build directories
+bin/
+gen/
+out/
+build/
+.android/
+.gradle/
+local.properties
+
+# Android NDK
+obj/
+libs/
+
+# Android Studio
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore files (sensitive)
+*.keystore
+*.jks
+*.p12
+*.key
+
+# ============================================================================
+# IDE and Editor Files
+# ============================================================================
+
+# VS Code
+.vscode/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+!out/production/
+
+# Eclipse
+.classpath
+.project
+.settings/
+.metadata/
+
+# NetBeans
+/nbproject/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# Vim
+*.swp
+*.swo
+*~
+.tags
+.tags_sorted_by_file
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# ============================================================================
+# OS Generated Files
+# ============================================================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# ============================================================================
+# Build Outputs and Binaries
+# ============================================================================
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.o
+*.obj
+
+# Static and shared libraries
+*.rlib
+*.rmeta
+
+# ============================================================================
+# Logs and Temporary Files
+# ============================================================================
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.rej
+*.swp
+
+# ============================================================================
+# Testing and Coverage
+# ============================================================================
+
+# Test coverage
+*.gcno
+*.gcda
+*.gcov
+coverage/
+lcov.info
+*.lcov
+
+# Test outputs
+test-output/
+test-results/
+
+# ============================================================================
+# Documentation Build
+# ============================================================================
+
+# Generated docs
+doc/
+docs/_build/
+*.md.html
+
+# ============================================================================
+# Package Managers
+# ============================================================================
+
+# npm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# ============================================================================
+# Secrets and Sensitive Data
+# ============================================================================
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Credentials
+credentials.json
+service-account.json
+*.pem
+*.crt
+*.csr
+
+# ============================================================================
+# Distribution and Packaging
+# ============================================================================
+
+# Distribution directories
+dist/
+build/
+out/
+export/
+
+# Archive files (too large for GitHub)
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# ============================================================================
+# Miscellaneous
+# ============================================================================
+
+# Crashlytics
+crashlytics-build.properties
+sysinfo.txt
+
+# Fabric
+fabric.properties
+
+# Google Services
+google-services.json
+GoogleService-Info.plist
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# Profiling
+*.prof
+*.profraw
+
+# ============================================================================
+# Project Specific
+# ============================================================================
+
+# APK outputs (keep in releases, not in repo)
+*.apk
+riss-launcher-*.apk
+
+# Build scripts outputs
+target/
+android/app/build/
+
+# Local configuration
+.local/
+*.local
+
+# ============================================================================
+# Exceptions (files to track)
+# ============================================================================
+
+# Keep Cargo.lock for reproducible builds
+!Cargo.lock
+
+# Keep important documentation
+!README.md
+!README-ANDROID.md
+!CONTRIBUTING.md
+!LICENSE
+!CHANGELOG.md
+
+# Keep workflow files
+!.github/
+
+# Keep source code
+!src/
+!android/
+
+# Keep build scripts
+!*.sh
+!Makefile
+
+# ============================================================================
+# End of .gitignore
+# ============================================================================
