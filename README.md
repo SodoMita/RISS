@@ -10,13 +10,17 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 
 🔍 **Fuzzy Search** - Find apps quickly with intelligent fuzzy matching
 
-⭐ **Favorites** - Mark frequently used apps as favorites for quick access
+⭐ **Favorites** - Pin apps in a quick-launch bar and manage them from app actions
 
-📊 **Usage Tracking** - Automatically tracks launch counts and shows frequently used apps
+📊 **Usage Tracking** - Automatically tracks launch counts and supports recent, frequent, or alphabetical ordering
 
-🏷️ **Custom Tags** - Add custom tags to apps for better organization
+🏷️ **Custom Tags** - Add searchable tags to apps from the tag button or long-press menu
 
-🧮 **Calculator** - Built-in calculator for quick math (supports +, -, *, /, ^, parentheses)
+🧮 **Calculator & Web Search** - Calculate expressions or send a query to DuckDuckGo, Google, or Brave
+
+⚙️ **Settings** - Persisted controls for themes, result density, providers, history, favorites, touch gestures, and hidden apps
+
+👆 **Touch-first controls** - Large tap targets, tap-to-launch rows, long-press actions, and configurable swipe/double-tap gestures
 
 ⌨️ **Keyboard Navigation** - Full keyboard support for fast operation
 
@@ -77,11 +81,19 @@ cargo build --release
 - Tags help you find apps using custom keywords
 - Example: Tag Firefox with "web", "internet", "browser"
 
-#### Calculator
+#### Calculator and web search
 - Type mathematical expressions directly in the search bar
-- Supported operators: `+`, `-`, `*`, `/`, `^` (power)
-- Supports parentheses: `(5+3)*2`
-- Example: Type `2^10` to see `= 1024`
+- Supported operators: `+`, `-`, `*`, `/`, `^` (power), and parentheses
+- Tap a calculator result to copy it
+- If an app doesn't match, tap the web-search action to open your selected provider
+
+#### Touch behavior and settings
+- Tap the main area of an app row to launch it; tap the star to pin or unpin it
+- Tap the tag button to edit tags, or press and hold a result to open its action menu
+- Search focus is requested once at launch, not forced every frame, so app and settings buttons remain touchable
+- Open **Settings** with the gear button to choose a theme/accent, result density, visible search fields, home view, history sort, favorites bar, app exclusions, and gesture actions
+- Swipe and double-tap actions are assigned in Settings and performed on the RISS title area
+- Settings are saved separately from history. Use **Advanced** to copy, import, or restore preferences
 
 #### App Discovery
 - Automatically scans standard Linux application directories:
@@ -93,16 +105,16 @@ cargo build --release
 
 ## Configuration
 
-History and favorites are stored in:
-```
-~/.config/riss-launcher/history.json
-```
+Launcher preferences are stored in `~/.config/riss-launcher/settings.json` (or `$XDG_CONFIG_HOME/riss-launcher/settings.json`). Launch history and favorites remain in `~/.config/riss-launcher/history.json`.
 
-This file contains:
-- Launch counts for each app
-- Last launch timestamps
-- Favorite apps list
-- Custom tags
+Preferences include:
+- System, light, dark, and AMOLED themes with accent colors
+- Home view and result limit, app search fields, calculator, and web provider
+- Result size, icons, descriptions, tags, separators, search bar, and favorites bar appearance
+- History ranking, pause-history, favorite exclusions, and reset actions
+- Long-press, swipe, and double-tap actions; hidden apps; settings import/export
+
+History data contains launch counts, last-launch timestamps, favorite app IDs, and custom tags.
 
 ## Screenshots
 
@@ -167,29 +179,24 @@ cargo build --release
 
 The optimized binary will be in `target/release/riss_launcher`.
 
-## Comparison with RISS Launcher (Android)
+## KISS-inspired features and platform limits
 
-| Feature | KISS Android | This Implementation |
-|---------|--------------|---------------------|
-| Search bar position | Bottom | Bottom ✓ |
-| Fuzzy search | Yes | Yes ✓ |
-| Favorites | Yes | Yes ✓ |
-| Tags | Yes | Yes ✓ |
-| Calculator | Yes | Yes ✓ |
-| Contact search | Yes | No (Linux-focused) |
-| Settings search | Yes | Partial |
-| Minimalist UI | Yes | Yes ✓ |
-| Usage tracking | Yes | Yes ✓ |
+| Feature area | RISS support |
+|--------------|--------------|
+| Fuzzy app search, descriptions, categories, and tags | ✓ |
+| Tap-to-launch, long-press actions, favorites, and usage history | ✓ |
+| Light/dark/system/AMOLED themes, accent colors, and result sizing | ✓ |
+| Calculator and configurable web search providers | ✓ |
+| Hidden apps, settings import/export, and launcher gestures | ✓ |
+| Contacts, call history, icon packs, and Android notification shade | Not available in this cross-platform build |
 
 ## Future Enhancements
 
-- [ ] Support for web searches
 - [ ] File search integration
 - [ ] Command execution (run shell commands)
-- [ ] Custom themes/skins
 - [ ] Plugin system
 - [ ] Wayland-specific optimizations
-- [ ] Icon loading from system themes
+- [ ] Native system icon and icon-pack loading
 - [ ] Multi-language support
 
 ## Troubleshooting

@@ -5,6 +5,7 @@ use jni::sys::{jobject, JavaVM as JavaVMPtr};
 use jni::JNIEnv;
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use winit::platform::android::activity::AndroidApp;
 
@@ -22,6 +23,11 @@ pub fn set_android_app(app: AndroidApp) {
 /// Get the stored AndroidApp
 fn get_android_app() -> Option<std::sync::MutexGuard<'static, AndroidApp>> {
     ANDROID_APP.get().map(|m| m.lock().unwrap())
+}
+
+/// Get Android's app-private internal directory for persisted launcher data.
+pub fn internal_data_path() -> Option<PathBuf> {
+    get_android_app().and_then(|app| app.internal_data_path())
 }
 
 /// Discover all installed applications using JNI and PackageManager
@@ -308,5 +314,93 @@ pub fn launch_app_jni(package_name: &str) -> Result<(), String> {
     .map_err(|e| format!("Failed to start activity: {:?}", e))?;
 
     info!("Launched: {}", package_name);
+    Ok(())
+}
+
+/// Open a web URL in the user's browser using Android's standard VIEW intent.
+pub fn open_url_jni(url: &str) -> Result<(), String> {
+    let app_guard = get_android_app().ok_or("AndroidApp not initialized")?;
+    let app: &AndroidApp = &*app_guard;
+    let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+    if vm_ptr.is_null() {
+        return Err("JavaVM pointer is null".to_string());
+    }
+
+    let vm = unsafe { jni::JavaVM::from_raw(vm_ptr) }
+        .map_err(|error| format!("Failed to create JavaVM: {error:?}"))?;
+    let activity_obj = app.activity_as_ptr() as jobject;
+    let activity = unsafe { JObject::from_raw(activity_obj) };
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|error| format!("Failed to attach thread: {error:?}"))?;
+
+    let url_string = env
+        .new_string(url)
+        .map_err(|error| format!("Failed to create URL string: {error:?}"))?;
+    let uri = env
+        .call_static_method(
+            "android/net/Uri",
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::Object(&url_string)],
+        )
+        .map_err(|error| format!("Could not parse URL: {error:?}"))?
+        .l()
+        .map_err(|error| format!("Could not create URI: {error:?}"))?;
+    let action = env
+        .new_string("android.intent.action.VIEW")
+        .map_err(|error| format!("Could not create intent action: {error:?}"))?;
+    let intent = env
+        .new_object(
+            "android/content/Intent",
+            "(Ljava/lang/String;Landroid/net/Uri;)V",
+            &[JValue::Object(&action), JValue::Object(&uri)],
+        )
+        .map_err(|error| format!("Could not create browser intent: {error:?}"))?;
+
+    env.call_method(
+        &activity,
+        "startActivity",
+        "(Landroid/content/Intent;)V",
+        &[JValue::Object(&intent)],
+    )
+    .map_err(|error| format!("Could not open URL: {error:?}"))?;
+    Ok(())
+}
+
+/// Open Android's default-app settings so the user can select RISS as their home app.
+pub fn open_default_apps_settings_jni() -> Result<(), String> {
+    let app_guard = get_android_app().ok_or("AndroidApp not initialized")?;
+    let app: &AndroidApp = &*app_guard;
+    let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+    if vm_ptr.is_null() {
+        return Err("JavaVM pointer is null".to_string());
+    }
+
+    let vm = unsafe { jni::JavaVM::from_raw(vm_ptr) }
+        .map_err(|error| format!("Failed to create JavaVM: {error:?}"))?;
+    let activity_obj = app.activity_as_ptr() as jobject;
+    let activity = unsafe { JObject::from_raw(activity_obj) };
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|error| format!("Failed to attach thread: {error:?}"))?;
+    let action = env
+        .new_string("android.settings.HOME_SETTINGS")
+        .map_err(|error| format!("Could not create settings action: {error:?}"))?;
+    let intent = env
+        .new_object(
+            "android/content/Intent",
+            "(Ljava/lang/String;)V",
+            &[JValue::Object(&action)],
+        )
+        .map_err(|error| format!("Could not create settings intent: {error:?}"))?;
+
+    env.call_method(
+        &activity,
+        "startActivity",
+        "(Landroid/content/Intent;)V",
+        &[JValue::Object(&intent)],
+    )
+    .map_err(|error| format!("Could not open default-app settings: {error:?}"))?;
     Ok(())
 }

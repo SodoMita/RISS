@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Persistent history and favorites data
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct HistoryData {
     /// Map from app exec command to launch count
     pub launch_counts: HashMap<String, u32>,
@@ -13,7 +14,7 @@ pub struct HistoryData {
     pub last_launched: HashMap<String, u64>,
     /// Set of favorite app exec commands
     pub favorites: Vec<String>,
-    /// Custom tags: exec -> tags
+    /// Custom tag overrides: exec -> tags. An empty vector explicitly clears platform tags.
     pub tags: HashMap<String, Vec<String>>,
 }
 
@@ -21,10 +22,9 @@ impl HistoryData {
     fn data_path() -> PathBuf {
         #[cfg(target_os = "android")]
         {
-            // On Android, use the app's internal storage directory
-            // This would typically be obtained from the Android context
-            // For now, use a relative path that should work
-            PathBuf::from("history.json")
+            crate::android_app_entry::android_jni::internal_data_path()
+                .map(|directory| directory.join("history.json"))
+                .unwrap_or_else(|| PathBuf::from("history.json"))
         }
 
         #[cfg(not(target_os = "android"))]
@@ -96,11 +96,7 @@ impl HistoryData {
     }
 
     pub fn set_tags(&mut self, exec: &str, tags: Vec<String>) {
-        if tags.is_empty() {
-            self.tags.remove(exec);
-        } else {
-            self.tags.insert(exec.to_string(), tags);
-        }
+        self.tags.insert(exec.to_string(), tags);
     }
 
     /// Get top N most frequently used apps
@@ -114,5 +110,30 @@ impl HistoryData {
         counts.sort_by_key(|a| std::cmp::Reverse(a.1));
         counts.truncate(n);
         counts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HistoryData;
+
+    #[test]
+    fn older_history_files_without_tags_still_load() {
+        let restored: HistoryData =
+            serde_json::from_str(r#"{"favorites":["example.app"]}"#).unwrap();
+
+        assert!(restored.is_favorite("example.app"));
+        assert!(restored.tags.is_empty());
+    }
+
+    #[test]
+    fn empty_tags_remain_an_explicit_override() {
+        let mut history = HistoryData::default();
+        history.set_tags("example.app", Vec::new());
+
+        let encoded = serde_json::to_string(&history).unwrap();
+        let restored: HistoryData = serde_json::from_str(&encoded).unwrap();
+        assert!(restored.tags.contains_key("example.app"));
+        assert!(restored.get_tags("example.app").is_empty());
     }
 }

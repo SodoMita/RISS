@@ -34,18 +34,25 @@ impl SearchEngine {
         }
     }
 
-    /// Search through apps with the given query
+    /// Search through apps with the given query using all searchable fields.
     pub fn search(&self, query: &str, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
+        self.search_with_options(query, apps, max_results, true, true, true)
+    }
+
+    /// Search through apps while allowing the user to enable/disable metadata providers.
+    pub fn search_with_options(
+        &self,
+        query: &str,
+        apps: &[AppEntry],
+        max_results: usize,
+        include_descriptions: bool,
+        include_tags: bool,
+        include_categories: bool,
+    ) -> Vec<SearchResult> {
         let query = query.trim();
 
         if query.is_empty() {
             return Vec::new();
-        }
-
-        // Check if it's a calculation
-        if let Some(_result) = try_calculate(query) {
-            // We'll handle this specially in the UI
-            // For now, return empty and handle in UI
         }
 
         let query_lower = query.to_lowercase();
@@ -53,9 +60,19 @@ impl SearchEngine {
             .iter()
             .filter_map(|app| {
                 let name_lower = app.name.to_lowercase();
-                let searchable = app.searchable_text();
+                let mut searchable_fields = vec![app.name.as_str()];
+                if include_descriptions && !app.comment.is_empty() {
+                    searchable_fields.push(app.comment.as_str());
+                }
+                if include_tags {
+                    searchable_fields.extend(app.tags.iter().map(String::as_str));
+                }
+                if include_categories {
+                    searchable_fields.extend(app.categories.iter().map(String::as_str));
+                }
+                let searchable = searchable_fields.join(" ");
 
-                // Exact match on name
+                // Exact and prefix app-name matches are always enabled.
                 if name_lower == query_lower {
                     return Some(SearchResult {
                         entry: app.clone(),
@@ -64,7 +81,6 @@ impl SearchEngine {
                     });
                 }
 
-                // Prefix match on name
                 if name_lower.starts_with(&query_lower) {
                     let score = 5000 + (100 - app.name.len() as i64);
                     return Some(SearchResult {
@@ -74,31 +90,31 @@ impl SearchEngine {
                     });
                 }
 
-                // Tag match
-                for tag in &app.tags {
-                    if tag.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 3000,
-                            match_type: MatchType::Tag,
-                        });
+                if include_tags {
+                    for tag in &app.tags {
+                        if tag.to_lowercase().starts_with(&query_lower) {
+                            return Some(SearchResult {
+                                entry: app.clone(),
+                                score: 3000,
+                                match_type: MatchType::Tag,
+                            });
+                        }
                     }
                 }
 
-                // Category match
-                for cat in &app.categories {
-                    if cat.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 2000,
-                            match_type: MatchType::Category,
-                        });
+                if include_categories {
+                    for category in &app.categories {
+                        if category.to_lowercase().starts_with(&query_lower) {
+                            return Some(SearchResult {
+                                entry: app.clone(),
+                                score: 2000,
+                                match_type: MatchType::Category,
+                            });
+                        }
                     }
                 }
 
-                // Fuzzy match on searchable text
                 if let Some(score) = self.matcher.fuzzy_match(&searchable, query) {
-                    // Boost by launch count
                     let boosted = score + (app.launch_count as i64 * 10);
                     return Some(SearchResult {
                         entry: app.clone(),
@@ -111,8 +127,7 @@ impl SearchEngine {
             })
             .collect();
 
-        // Sort by score descending
-        results.sort_by_key(|a| std::cmp::Reverse(a.score));
+        results.sort_by_key(|result| std::cmp::Reverse(result.score));
         results.truncate(max_results);
         results
     }
@@ -280,6 +295,44 @@ fn evaluate_expression(input: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn sample_app() -> AppEntry {
+        AppEntry {
+            name: "Editor".to_owned(),
+            comment: "Practical text tool".to_owned(),
+            exec: "editor".to_owned(),
+            icon: String::new(),
+            categories: vec!["Utility".to_owned()],
+            tags: vec!["writing".to_owned()],
+            desktop_file: PathBuf::new(),
+            launch_count: 0,
+            last_launched: 0,
+            is_favorite: false,
+        }
+    }
+
+    #[test]
+    fn metadata_search_respects_provider_settings() {
+        let engine = SearchEngine::new();
+        let apps = vec![sample_app()];
+
+        assert_eq!(
+            engine
+                .search_with_options("practical", &apps, 10, true, true, true)
+                .len(),
+            1
+        );
+        assert!(engine
+            .search_with_options("practical", &apps, 10, false, true, true)
+            .is_empty());
+        assert!(engine
+            .search_with_options("writing", &apps, 10, true, false, true)
+            .is_empty());
+        assert!(engine
+            .search_with_options("utility", &apps, 10, true, true, false)
+            .is_empty());
+    }
 
     #[test]
     fn test_calculate() {
