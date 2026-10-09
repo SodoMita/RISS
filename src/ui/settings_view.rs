@@ -650,7 +650,7 @@ fn section_interface(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             for (color, name) in ACCENTS.iter().rev() {
                 let selected = settings.primary_color == *color;
-                let (rect, response) = ui.allocate_exact_size(Vec2::s(22.0), Sense::click());
+                let (rect, response) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
                 if selected {
                     ui.painter().rect_filled(rect, 7.0, palette.text_dim);
                 }

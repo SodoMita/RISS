@@ -172,7 +172,7 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
                 for col in 0..2 {
                     let at = origin
                         + Vec2::new((col as f32) * (cell + gap), (row as f32) * (cell + gap));
-                    painter.rect_filled(Rect::from_min_size(at, Vec2::s(cell)), 2.0, color);
+                    painter.rect_filled(Rect::from_min_size(at, Vec2::splat(cell)), 2.0, color);
                 }
             }
         }
@@ -265,7 +265,7 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             ));
         }
         Icon::Copy => {
-            let size = Vec2::s(r * 0.95);
+            let size = Vec2::splat(r * 0.95);
             rect_outline(
                 painter,
                 Rect::from_center_size(center + Vec2::new(0.25, -0.25) * r, size),
@@ -594,7 +594,7 @@ pub fn icon(
     color: Color32,
     palette: &Palette,
 ) -> egui::Response {
-    let (_, response) = ui.allocate_exact_size(Vec2::s(size), Sense::hover());
+    let (_, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     let center = response.rect.center();
     draw_icon(ui, icon, center, size, color, palette.bg);
     response
@@ -608,7 +608,7 @@ pub fn app_badge(
     size: f32,
     palette: &Palette,
 ) -> egui::Response {
-    let (_, response) = ui.allocate_exact_size(Vec2::s(size), Sense::hover());
+    let (_, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     let rect = response.rect;
     let color = badge_color(display_name);
     let radius = if size >= 34.0 {
@@ -662,7 +662,7 @@ pub fn icon_button(
     palette: &Palette,
     tooltip: &str,
 ) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::s(size), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     if response.hovered() {
         let fill = if response.is_pointer_button_down_on() {
             palette.selected
