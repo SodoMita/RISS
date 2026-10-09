@@ -44,6 +44,22 @@ impl AppEntry {
     }
 }
 
+pub type IconPixels = (usize, usize, Vec<u8>);
+
+/// Load an Android application's icon using its package name.
+pub fn load_icon_rgba(entry: &AppEntry) -> Option<IconPixels> {
+    #[cfg(target_os = "android")]
+    {
+        android_jni::load_app_icon_jni(&entry.exec)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = entry;
+        None
+    }
+}
+
 /// Discover all installed applications via JNI
 pub fn discover_apps() -> Vec<AppEntry> {
     #[cfg(target_os = "android")]

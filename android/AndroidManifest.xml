@@ -27,6 +27,7 @@
             android:name="android.app.NativeActivity"
             android:label="RISS Launcher"
             android:configChanges="orientation|keyboardHidden|screenSize"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             
             <!-- CRITICAL: lib_name must match [lib] name in Cargo.toml exactly -->

@@ -1,6 +1,6 @@
 // JNI bridge for Android - reads installed apps and launches them
 
-use jni::objects::{JObject, JValue};
+use jni::objects::{JIntArray, JObject, JValue};
 use jni::sys::{jobject, JavaVM as JavaVMPtr};
 use jni::JNIEnv;
 use log::{error, info, warn};
@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 use winit::platform::android::activity::AndroidApp;
 
-use crate::android_app_entry::AppEntry;
+use crate::android_app_entry::{AppEntry, IconPixels};
 
 /// Global storage for the AndroidApp reference
 static ANDROID_APP: OnceCell<Mutex<AndroidApp>> = OnceCell::new();
@@ -239,6 +239,142 @@ fn build_tags_from_package(package_name: &str) -> Vec<String> {
     tags.sort();
     tags.dedup();
     tags
+}
+
+/// Render an Android application's Drawable into a small RGBA bitmap.
+pub fn load_app_icon_jni(package_name: &str) -> Option<IconPixels> {
+    let app_guard = get_android_app()?;
+    let app: &AndroidApp = &*app_guard;
+    let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+    if vm_ptr.is_null() {
+        return None;
+    }
+
+    let vm = unsafe { jni::JavaVM::from_raw(vm_ptr).ok()? };
+    let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jobject) };
+    let mut env = vm.attach_current_thread().ok()?;
+    let result = env
+        .with_local_frame(32, |env| {
+            Ok::<_, jni::errors::Error>(render_app_icon(env, &activity, package_name))
+        })
+        .ok()
+        .flatten();
+
+    // A package can disappear between discovery and rendering. Do not leave a
+    // Java exception pending on the UI thread if that happens.
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+    result
+}
+
+fn render_app_icon(env: &mut JNIEnv, activity: &JObject, package_name: &str) -> Option<IconPixels> {
+    const ICON_SIZE: i32 = 96;
+
+    let package_manager = env
+        .call_method(
+            activity,
+            "getPackageManager",
+            "()Landroid/content/pm/PackageManager;",
+            &[],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let package = env.new_string(package_name).ok()?;
+    let drawable = env
+        .call_method(
+            &package_manager,
+            "getApplicationIcon",
+            "(Ljava/lang/String;)Landroid/graphics/drawable/Drawable;",
+            &[JValue::Object(&package)],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let config = env
+        .get_static_field(
+            "android/graphics/Bitmap$Config",
+            "ARGB_8888",
+            "Landroid/graphics/Bitmap$Config;",
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let bitmap = env
+        .call_static_method(
+            "android/graphics/Bitmap",
+            "createBitmap",
+            "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+            &[
+                JValue::Int(ICON_SIZE),
+                JValue::Int(ICON_SIZE),
+                JValue::Object(&config),
+            ],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let canvas = env
+        .new_object(
+            "android/graphics/Canvas",
+            "(Landroid/graphics/Bitmap;)V",
+            &[JValue::Object(&bitmap)],
+        )
+        .ok()?;
+
+    env.call_method(
+        &drawable,
+        "setBounds",
+        "(IIII)V",
+        &[
+            JValue::Int(0),
+            JValue::Int(0),
+            JValue::Int(ICON_SIZE),
+            JValue::Int(ICON_SIZE),
+        ],
+    )
+    .ok()?;
+    env.call_method(
+        &drawable,
+        "draw",
+        "(Landroid/graphics/Canvas;)V",
+        &[JValue::Object(&canvas)],
+    )
+    .ok()?;
+
+    let pixels_array: JIntArray = env.new_int_array(ICON_SIZE * ICON_SIZE).ok()?;
+    env.call_method(
+        &bitmap,
+        "getPixels",
+        "([IIIIIII)V",
+        &[
+            JValue::Object(&pixels_array),
+            JValue::Int(0),
+            JValue::Int(ICON_SIZE),
+            JValue::Int(0),
+            JValue::Int(0),
+            JValue::Int(ICON_SIZE),
+            JValue::Int(ICON_SIZE),
+        ],
+    )
+    .ok()?;
+
+    let mut argb_pixels = vec![0; (ICON_SIZE * ICON_SIZE) as usize];
+    env.get_int_array_region(&pixels_array, 0, &mut argb_pixels)
+        .ok()?;
+    let mut rgba = Vec::with_capacity(argb_pixels.len() * 4);
+    for pixel in argb_pixels {
+        let pixel = pixel as u32;
+        rgba.extend_from_slice(&[
+            ((pixel >> 16) & 0xff) as u8,
+            ((pixel >> 8) & 0xff) as u8,
+            (pixel & 0xff) as u8,
+            ((pixel >> 24) & 0xff) as u8,
+        ]);
+    }
+
+    Some((ICON_SIZE as usize, ICON_SIZE as usize, rgba))
 }
 
 /// Launch an app by its package name

@@ -57,6 +57,126 @@ impl AppEntry {
     }
 }
 
+pub type IconPixels = (usize, usize, Vec<u8>);
+
+/// Load and decode a desktop entry's icon into RGBA pixels.
+pub fn load_icon_rgba(entry: &AppEntry) -> Option<IconPixels> {
+    let path = resolve_icon_file(&entry.icon)?;
+    let bytes = fs::read(path).ok()?;
+    let rgba = image::load_from_memory(&bytes)
+        .ok()?
+        .thumbnail(128, 128)
+        .to_rgba8();
+    let width = rgba.width() as usize;
+    let height = rgba.height() as usize;
+    Some((width, height, rgba.into_raw()))
+}
+
+fn resolve_icon_file(icon: &str) -> Option<PathBuf> {
+    let icon = icon.trim();
+    if icon.is_empty() {
+        return None;
+    }
+
+    let supplied_path = Path::new(icon);
+    let file_name = supplied_path.file_name()?.to_str()?;
+    let stem = supplied_path.file_stem()?.to_str()?;
+    let mut file_names = Vec::new();
+    if matches!(
+        supplied_path
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("png" | "jpg" | "jpeg")
+    ) {
+        file_names.push(file_name.to_owned());
+    }
+    for extension in ["png", "jpg", "jpeg"] {
+        let candidate = format!("{stem}.{extension}");
+        if !file_names.contains(&candidate) {
+            file_names.push(candidate);
+        }
+    }
+
+    if supplied_path.is_file()
+        && matches!(
+            supplied_path
+                .extension()
+                .and_then(|extension| extension.to_str()),
+            Some("png" | "jpg" | "jpeg")
+        )
+    {
+        return Some(supplied_path.to_path_buf());
+    }
+
+    let mut data_dirs = Vec::new();
+    if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
+        data_dirs.push(PathBuf::from(data_home));
+    } else if let Some(home) = std::env::var_os("HOME") {
+        data_dirs.push(PathBuf::from(home).join(".local/share"));
+    }
+    if let Some(data_dirs_env) = std::env::var_os("XDG_DATA_DIRS") {
+        data_dirs.extend(std::env::split_paths(&data_dirs_env));
+    } else {
+        data_dirs.extend([
+            PathBuf::from("/usr/local/share"),
+            PathBuf::from("/usr/share"),
+        ]);
+    }
+
+    let mut icon_roots: Vec<PathBuf> = data_dirs.iter().map(|dir| dir.join("icons")).collect();
+    if let Some(home) = std::env::var_os("HOME") {
+        icon_roots.push(PathBuf::from(home).join(".icons"));
+    }
+
+    for data_dir in &data_dirs {
+        for name in &file_names {
+            let candidate = data_dir.join("pixmaps").join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    const THEMES: &[&str] = &["hicolor", "Adwaita", "gnome", "breeze", "Papirus", "Yaru"];
+    const SIZES: &[&str] = &[
+        "256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "24x24", "scalable", "symbolic",
+    ];
+    const CONTEXTS: &[&str] = &[
+        "apps",
+        "applications",
+        "status",
+        "places",
+        "devices",
+        "mimetypes",
+    ];
+
+    for root in icon_roots {
+        if !root.is_dir() {
+            continue;
+        }
+        for name in &file_names {
+            let direct = root.join(name);
+            if direct.is_file() {
+                return Some(direct);
+            }
+        }
+        for theme in THEMES {
+            for size in SIZES {
+                for context in CONTEXTS {
+                    for name in &file_names {
+                        let candidate = root.join(theme).join(size).join(context).join(name);
+                        if candidate.is_file() {
+                            return Some(candidate);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Parse a .desktop file into an AppEntry
 fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
     let content = fs::read_to_string(path).ok()?;
