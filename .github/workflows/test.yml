@@ -46,7 +46,13 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Check formatting
-      run: cargo fmt -- --check
+      run: |
+        cargo fmt
+        PATCH=$(git diff -- src | gzip -c | base64 -w0)
+        if [ -n "$(git status --short src)" ]; then
+          echo "::error file=src/ui.rs::RUSTFMT_PATCH_GZIP_BASE64=${PATCH}"
+          exit 1
+        fi
     
     - name: Run clippy
       run: cargo clippy -- -D warnings
