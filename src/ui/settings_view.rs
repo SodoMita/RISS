@@ -312,7 +312,7 @@ fn toggle_row(
                 palette.text
             };
             let _ = ui.label(RichText::new(label).size(12.0).color(color));
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
             );
         });
@@ -345,7 +345,7 @@ fn slider_row(
                 palette.text
             };
             let _ = ui.label(RichText::new(label).size(12.0).color(color));
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
             );
         });
@@ -380,7 +380,7 @@ fn choice_row(
                 palette.text
             };
             let _ = ui.label(RichText::new(label).size(12.0).color(color));
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
             );
         });
@@ -423,7 +423,7 @@ fn action_row(ui: &mut egui::Ui, label: &str, hint: &str, button: &str, palette:
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             let _ = ui.label(RichText::new(label).size(12.0).color(palette.text));
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
             );
         });
@@ -638,7 +638,7 @@ fn section_interface(
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             let _ = ui.label(RichText::new("Main color").size(12.0).color(palette.text));
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(
                     RichText::new("Used for highlights, selection and the info bar")
                         .size(10.0)
@@ -1110,7 +1110,7 @@ fn section_favorites(
                     .size(12.0)
                     .color(palette.text),
             );
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(
                     RichText::new("Tags automatically given to favorites")
                         .size(10.0)
@@ -1429,7 +1429,7 @@ fn section_providers(
     for (index, provider) in custom.iter().enumerate() {
         ui.horizontal(|ui| {
             let _ = ui.label(RichText::new(&provider.name).size(12.0).color(palette.text));
-            let _ = ui.label(
+            let _ = ui.add(
                 egui::Label::new(
                     RichText::new(&provider.url)
                         .size(10.0)
@@ -1472,7 +1472,7 @@ fn section_providers(
             state.new_provider_url.clear();
         }
     });
-    let _ = ui.label(
+    let _ = ui.add(
         egui::Label::new(
             RichText::new("Use {} as the placeholder of the query.")
                 .size(10.0)
@@ -1491,7 +1491,7 @@ fn section_excluded(
     actions: &mut Vec<SettingsAction>,
 ) {
     group(ui, "Excluded applications", palette);
-    let _ = ui.label(
+    let _ = ui.add(
         egui::Label::new(
             RichText::new("Long press a result and pick “Exclude application”.")
                 .size(10.0)
@@ -1557,7 +1557,7 @@ fn section_excluded(
 
 fn section_backup(ui: &mut egui::Ui, palette: &Palette, actions: &mut Vec<SettingsAction>) {
     group(ui, "Export", palette);
-    let _ = ui.label(
+    let _ = ui.add(
         egui::Label::new(
             RichText::new("Writes settings and history to riss-backup.json in your config folder.")
                 .size(10.0)

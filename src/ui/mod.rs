@@ -2300,11 +2300,13 @@ impl RissApp {
                                 .color(palette.text),
                         );
                         ui.add_space(6.0);
-                        let _ = ui.label(
-                            RichText::new(&dialog.message)
-                                .size(12.0)
-                                .color(palette.text_dim)
-                                .wrap(),
+                        let _ = ui.add(
+                            egui::Label::new(
+                                RichText::new(&dialog.message)
+                                    .size(12.0)
+                                    .color(palette.text_dim),
+                            )
+                            .wrap(),
                         );
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
