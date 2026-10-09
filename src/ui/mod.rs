@@ -2316,6 +2316,9 @@ impl RissApp {
         if remaining == 0 {
             self.timer = None;
             self.set_status("Timer finished".to_string());
+            // Audible feedback, like the KISS timer notification.
+            #[cfg(not(target_os = "android"))]
+            println!("\u{7}");
             return;
         }
         ctx.request_repaint_after(Duration::from_millis(200));
