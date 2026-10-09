@@ -345,7 +345,7 @@ impl RissApp {
     fn update_results(&mut self) {
         let max_results = self.max_visible_results();
         let query = self.query.trim().to_string();
-        let results: Vec<SearchResult>;
+        let mut results: Vec<SearchResult>;
 
         match self.view {
             View::Apps => {
