@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.kisslauncher.app"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+
+    <uses-sdk
+        android:minSdkVersion="21"
+        android:targetSdkVersion="33" />
+
+    <!-- Required to see all installed apps on Android 11+ -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    
+    <uses-permission android:name="android.permission.INTERNET" />
+    
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <application
+        android:label="KISS Launcher"
+        android:hasCode="false">
+        
+        <activity
+            android:name="android.app.NativeActivity"
+            android:label="KISS Launcher"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="true">
+            
+            <!-- CRITICAL: lib_name must match [lib] name in Cargo.toml exactly -->
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="kiss_launcher" />
+            
+            <!-- Main launcher intent -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

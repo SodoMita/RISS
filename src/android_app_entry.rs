@@ -1,0 +1,62 @@
+// Android-specific app entry - uses JNI to read installed apps
+#[cfg(target_os = "android")]
+pub mod android_jni;
+
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+/// Represents a launchable application
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppEntry {
+    pub name: String,
+    pub comment: String,
+    pub exec: String,       // On Android: package name
+    pub icon: String,
+    pub categories: Vec<String>,
+    pub tags: Vec<String>,
+    pub desktop_file: PathBuf,
+    pub launch_count: u32,
+    pub last_launched: u64,
+    pub is_favorite: bool,
+}
+
+impl AppEntry {
+    pub fn searchable_text(&self) -> String {
+        let mut parts = vec![self.name.clone()];
+        if !self.comment.is_empty() {
+            parts.push(self.comment.clone());
+        }
+        parts.extend(self.tags.iter().cloned());
+        parts.extend(self.categories.iter().cloned());
+        parts.join(" ")
+    }
+
+    pub fn launch(&self) -> Result<(), String> {
+        #[cfg(target_os = "android")]
+        {
+            android_jni::launch_app_jni(&self.exec)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            Err("Not on Android".to_string())
+        }
+    }
+}
+
+/// Discover all installed applications via JNI
+pub fn discover_apps() -> Vec<AppEntry> {
+    #[cfg(target_os = "android")]
+    {
+        android_jni::discover_apps_jni()
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        Vec::new()
+    }
+}
+
+pub fn builtin_entries() -> Vec<AppEntry> {
+    Vec::new()
+}

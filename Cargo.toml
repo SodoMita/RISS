@@ -1,0 +1,43 @@
+[package]
+name = "kiss_launcher"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "kiss_launcher"
+path = "src/main.rs"
+
+[dependencies]
+# eframe 0.32+ has official Android support
+eframe = { version = "0.32", default-features = false, features = [
+    "glow",
+    "default_fonts",
+    "android-native-activity",
+] }
+egui = "0.32"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+fuzzy-matcher = "0.3"
+log = "0.4"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+directories = "5.0"
+freedesktop-desktop-entry = "0.5"
+open = "5.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.14"
+jni = "0.21"
+once_cell = "1.19"
+
+[profile.release]
+opt-level = 2
+strip = true
+lto = true
+
+[target.'cfg(target_os = "android")'.dependencies.winit]
+version = "0.30"
+features = ["android-native-activity"]

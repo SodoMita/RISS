@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=KISS Launcher
+Comment=Minimalist application launcher
+Exec=kiss_launcher
+Icon=search
+Type=Application
+Categories=Utility;System;
+Keywords=launcher;search;apps;applications;
+StartupNotify=false
+Terminal=false

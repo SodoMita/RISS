@@ -1,0 +1,22 @@
+[package.metadata.android]
+package = "com.kisslauncher.app"
+apk_name = "KISSLauncher"
+assets = []
+res = []
+build_targets = ["aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 21
+target_sdk_version = 33
+
+[package.metadata.android.application]
+label = "KISS Launcher"
+icon = "@mipmap/ic_launcher"
+theme = "@android:style/Theme.NoTitleBar.Fullscreen"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.touchscreen"
+required = false
