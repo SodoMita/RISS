@@ -21,7 +21,8 @@ examples/
 incremental/
 
 # Cargo registry and cache
-.cargo/
+.cargo/*
+!.cargo/config.toml
 .cargo-ok
 
 # ============================================================================
