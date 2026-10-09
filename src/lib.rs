@@ -9,6 +9,7 @@ mod app_entry;
 
 mod history;
 mod search;
+mod settings;
 mod ui;
 
 #[cfg(target_os = "android")]

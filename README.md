@@ -18,9 +18,13 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 
 🧮 **Calculator** - Built-in calculator for quick math (supports +, -, *, /, ^, parentheses)
 
+👆 **Touch-first controls** - Large tap targets, long-press app actions, swipe gestures, and a KISS-style bottom bar
+
+⚙️ **Complete settings** - Persistent History, Favorites, Appearance, Icons, Gestures, Providers, Exclusions, and Advanced settings matching every KISS preference
+
 ⌨️ **Keyboard Navigation** - Full keyboard support for fast operation
 
-🎨 **Dark Theme** - Beautiful dark theme with Catppuccin-inspired colors
+🎨 **Themes** - Dark, light, transparent, accent-color, icon, result-size, and layout controls
 
 ## Installation
 
