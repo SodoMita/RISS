@@ -93,7 +93,7 @@ impl HistoryData {
             .iter()
             .map(|(exec, ts)| (exec.clone(), *ts))
             .collect();
-        entries.sort_by_key(|(_, ts)| std::cmp::Reverse(*ts));
+        entries.sort_by_key(|(_, ts)| Reverse(*ts));
         entries.truncate(MAX_TRACKED_APPS);
         let keep: Vec<String> = entries.into_iter().map(|(exec, _)| exec).collect();
         self.launch_counts.retain(|exec, _| keep.contains(exec));
@@ -273,7 +273,7 @@ impl HistoryData {
             .filter(|(_, &c)| c > 0)
             .map(|(exec, &count)| (exec.clone(), count))
             .collect();
-        counts.sort_by_key(|a| std::cmp::Reverse(a.1));
+        counts.sort_by_key(|a| Reverse(a.1));
         counts.truncate(n);
         counts
     }

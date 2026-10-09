@@ -564,7 +564,7 @@ impl RissApp {
             }
         }
 
-        results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.sort_by_key(|result| std::cmp::Reverse(result.score));
         results
     }
 
