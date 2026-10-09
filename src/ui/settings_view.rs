@@ -87,7 +87,8 @@ pub fn show(
                 .color(palette.text),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if widgets::icon_button(ui, Icon::Close, 26.0, palette.text_dim, palette, "Close").clicked()
+            if widgets::icon_button(ui, Icon::Close, 26.0, palette.text_dim, palette, "Close")
+                .clicked()
             {
                 actions.push(SettingsAction::Close);
             }
@@ -135,11 +136,17 @@ fn render_sidebar(ui: &mut egui::Ui, state: &mut SettingsUi, palette: &Palette) 
             ui.spacing_mut().item_spacing.y = 2.0;
             for section in SettingsSection::ALL {
                 let active = state.section == section && state.highlight.is_none();
-                let text = RichText::new(section.title())
-                    .size(12.0)
-                    .color(if active { palette.accent } else { palette.text });
+                let text = RichText::new(section.title()).size(12.0).color(if active {
+                    palette.accent
+                } else {
+                    palette.text
+                });
                 let button = egui::Button::new(text)
-                    .fill(if active { palette.selected } else { Color32::TRANSPARENT })
+                    .fill(if active {
+                        palette.selected
+                    } else {
+                        Color32::TRANSPARENT
+                    })
                     .stroke(Stroke::NONE)
                     .min_size(Vec2::new(138.0, 26.0));
                 if ui.add(button).clicked() {
@@ -204,11 +211,7 @@ fn render_filtered(
             for entry in &entries {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        let _ = ui.label(
-                            RichText::new(entry.title)
-                                .size(12.0)
-                                .color(palette.text),
-                        );
+                        let _ = ui.label(RichText::new(entry.title).size(12.0).color(palette.text));
                         let _ = ui.label(
                             RichText::new(format!(
                                 "{} · {}",
@@ -261,7 +264,9 @@ fn render_section(
                 SettingsSection::Interface => section_interface(ui, state, settings, palette),
                 SettingsSection::Results => section_results(ui, state, settings, palette),
                 SettingsSection::SearchBar => section_search_bar(ui, state, settings, palette),
-                SettingsSection::Favorites => section_favorites(ui, state, settings, palette, actions),
+                SettingsSection::Favorites => {
+                    section_favorites(ui, state, settings, palette, actions)
+                }
                 SettingsSection::History => section_history(ui, state, settings, palette, actions),
                 SettingsSection::Tags => section_tags(ui, state, settings, palette, actions),
                 SettingsSection::Providers => {
@@ -283,7 +288,8 @@ fn is_highlighted(state: &SettingsUi, id: &str) -> bool {
 fn row_frame(ui: &mut egui::Ui, palette: &Palette, highlighted: bool) {
     if highlighted {
         let height = ui.spacing().item_spacing.y;
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
         ui.painter().rect_filled(rect, 4.0, palette.selected);
     }
 }
@@ -300,7 +306,11 @@ fn toggle_row(
     let highlighted = is_highlighted(state, id);
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            let color = if highlighted { palette.accent } else { palette.text };
+            let color = if highlighted {
+                palette.accent
+            } else {
+                palette.text
+            };
             let _ = ui.label(RichText::new(label).size(12.0).color(color));
             let _ = ui.label(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
@@ -329,7 +339,11 @@ fn slider_row(
     let highlighted = is_highlighted(state, id);
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            let color = if highlighted { palette.accent } else { palette.text };
+            let color = if highlighted {
+                palette.accent
+            } else {
+                palette.text
+            };
             let _ = ui.label(RichText::new(label).size(12.0).color(color));
             let _ = ui.label(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
@@ -360,7 +374,11 @@ fn choice_row(
     let mut chosen = None;
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            let color = if highlighted { palette.accent } else { palette.text };
+            let color = if highlighted {
+                palette.accent
+            } else {
+                palette.text
+            };
             let _ = ui.label(RichText::new(label).size(12.0).color(color));
             let _ = ui.label(
                 egui::Label::new(RichText::new(hint).size(10.0).color(palette.text_dim)).truncate(),
@@ -369,14 +387,24 @@ fn choice_row(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             for (index, option) in options.iter().enumerate() {
                 let selected = index == current;
-                let text = RichText::new(*option)
-                    .size(11.0)
-                    .color(if selected { palette.accent } else { palette.text_dim });
+                let text = RichText::new(*option).size(11.0).color(if selected {
+                    palette.accent
+                } else {
+                    palette.text_dim
+                });
                 let button = egui::Button::new(text)
-                    .fill(if selected { palette.selected } else { Color32::TRANSPARENT })
+                    .fill(if selected {
+                        palette.selected
+                    } else {
+                        Color32::TRANSPARENT
+                    })
                     .stroke(Stroke::new(
                         1.0,
-                        if selected { palette.accent } else { palette.border },
+                        if selected {
+                            palette.accent
+                        } else {
+                            palette.border
+                        },
                     ))
                     .corner_radius(CornerRadius::same(6))
                     .min_size(Vec2::new(0.0, 24.0));
@@ -554,7 +582,9 @@ fn section_touch(
             "gesture_down" => options.iter().position(|a| *a == settings.gesture_down),
             "gesture_left" => options.iter().position(|a| *a == settings.gesture_left),
             "gesture_right" => options.iter().position(|a| *a == settings.gesture_right),
-            _ => options.iter().position(|a| *a == settings.gesture_long_press),
+            _ => options
+                .iter()
+                .position(|a| *a == settings.gesture_long_press),
         }
         .unwrap_or(0);
         if let Some(index) = choice_row(ui, palette, state, id, label, "", &labels, current) {
@@ -1075,7 +1105,11 @@ fn section_favorites(
     let mut tags = settings.favorites_tags.join(", ");
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            let _ = ui.label(RichText::new("Favorites tags").size(12.0).color(palette.text));
+            let _ = ui.label(
+                RichText::new("Favorites tags")
+                    .size(12.0)
+                    .color(palette.text),
+            );
             let _ = ui.label(
                 egui::Label::new(
                     RichText::new("Tags automatically given to favorites")
@@ -1258,7 +1292,13 @@ fn section_tags(
     }
 
     group(ui, "Reset", palette);
-    if action_row(ui, "Reset tags", "Forget every custom tag", "Reset", palette) {
+    if action_row(
+        ui,
+        "Reset tags",
+        "Forget every custom tag",
+        "Reset",
+        palette,
+    ) {
         actions.push(SettingsAction::Confirm(Dialog {
             title: "Reset tags?".to_string(),
             message: "Every tag you created will be removed.".to_string(),
@@ -1388,11 +1428,7 @@ fn section_providers(
     let custom = settings.custom_web_providers.clone();
     for (index, provider) in custom.iter().enumerate() {
         ui.horizontal(|ui| {
-            let _ = ui.label(
-                RichText::new(&provider.name)
-                    .size(12.0)
-                    .color(palette.text),
-            );
+            let _ = ui.label(RichText::new(&provider.name).size(12.0).color(palette.text));
             let _ = ui.label(
                 egui::Label::new(
                     RichText::new(&provider.url)
@@ -1539,7 +1575,13 @@ fn section_backup(ui: &mut egui::Ui, palette: &Palette, actions: &mut Vec<Settin
             action: DialogAction::Export,
         }));
     }
-    if action_row(ui, "Import everything", "Restore the last backup", "Import", palette) {
+    if action_row(
+        ui,
+        "Import everything",
+        "Restore the last backup",
+        "Import",
+        palette,
+    ) {
         actions.push(SettingsAction::Confirm(Dialog {
             title: "Import data?".to_string(),
             message: "The current settings and history will be replaced.".to_string(),
@@ -1580,7 +1622,13 @@ fn section_advanced(ui: &mut egui::Ui, palette: &Palette, actions: &mut Vec<Sett
     }
 
     group(ui, "Danger zone", palette);
-    if action_row(ui, "Reset everything", "Wipe all launcher data", "Reset", palette) {
+    if action_row(
+        ui,
+        "Reset everything",
+        "Wipe all launcher data",
+        "Reset",
+        palette,
+    ) {
         actions.push(SettingsAction::Confirm(Dialog {
             title: "Reset everything?".to_string(),
             message: "History, favorites, tags and exclusions will be erased.".to_string(),

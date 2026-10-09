@@ -1,12 +1,12 @@
 // JNI bridge for Android - reads installed apps and launches them
 
+use eframe::winit::platform::android::activity::AndroidApp;
 use jni::objects::{JObject, JValue};
 use jni::sys::{jobject, JavaVM as JavaVMPtr};
 use jni::JNIEnv;
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
-use eframe::winit::platform::android::activity::AndroidApp;
 
 use crate::android_app_entry::AppEntry;
 
@@ -271,10 +271,10 @@ pub fn open_url_jni(url: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to create intent: {:?}", e))?;
 
     // intent.setAction(Intent.ACTION_VIEW)
-    let action: jni::objects::JString =
-        env.new_string("android.intent.action.VIEW")
-            .map_err(|e| format!("Failed to create action string: {:?}", e))?
-            .into();
+    let action: jni::objects::JString = env
+        .new_string("android.intent.action.VIEW")
+        .map_err(|e| format!("Failed to create action string: {:?}", e))?
+        .into();
     env.call_method(
         &intent,
         "setAction",

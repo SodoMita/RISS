@@ -134,7 +134,10 @@ impl SearchEngine {
                 }
 
                 // Word match inside the name ("fire" matching "Firefox Nightly")
-                if name_lower.split_whitespace().any(|w| w.starts_with(&query_lower)) {
+                if name_lower
+                    .split_whitespace()
+                    .any(|w| w.starts_with(&query_lower))
+                {
                     return Some(SearchResult {
                         entry: app.clone(),
                         score: 4000,
@@ -204,9 +207,12 @@ impl SearchEngine {
 
         // Sort by score descending, then alphabetically for a stable order.
         results.sort_by(|a, b| {
-            b.score
-                .cmp(&a.score)
-                .then_with(|| a.entry.name.to_lowercase().cmp(&b.entry.name.to_lowercase()))
+            b.score.cmp(&a.score).then_with(|| {
+                a.entry
+                    .name
+                    .to_lowercase()
+                    .cmp(&b.entry.name.to_lowercase())
+            })
         });
 
         // Precision filter: only applied to fuzzy matches, a prefix or tag hit
@@ -428,9 +434,7 @@ pub fn setting_result(title: &str, section: &str, id: &str, value: &str) -> Sear
         ),
         score: 900,
         match_type: MatchType::Provider,
-        action: ResultAction::Setting {
-            id: id.to_string(),
-        },
+        action: ResultAction::Setting { id: id.to_string() },
     }
 }
 

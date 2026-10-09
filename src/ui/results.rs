@@ -126,7 +126,8 @@ fn render_row(
     let selected = index == state.selected;
     let mut hovered = state.hovered == Some(index);
 
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
     hovered |= response.hovered();
 
     let pressed = response.is_pointer_button_down_on();
@@ -173,7 +174,11 @@ fn render_row(
         );
     }
 
-    let padding = if settings.large_result_list_margins { 12.0 } else { 6.0 };
+    let padding = if settings.large_result_list_margins {
+        12.0
+    } else {
+        6.0
+    };
     let inner = egui::Rect::from_min_max(
         rect.min + Vec2::new(padding, 4.0),
         rect.max - Vec2::new(padding, 4.0),
@@ -184,7 +189,11 @@ fn render_row(
     let show_actions = settings.show_row_actions;
     let actions_width = if show_actions { 56.0 } else { 0.0 };
     let number_width = if show_number { 18.0 } else { 0.0 };
-    let icon_width = if settings.hide_main_icons { 0.0 } else { icon_size + 8.0 };
+    let icon_width = if settings.hide_main_icons {
+        0.0
+    } else {
+        icon_size + 8.0
+    };
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -287,10 +296,8 @@ fn render_text(ui: &mut egui::Ui, result: &SearchResult, state: &ViewState) {
                     let _ = ui.label(RichText::new("·").size(11.0).color(palette.text_dim));
                 }
                 let _ = ui.add(
-                    egui::Label::new(
-                        RichText::new(&subtitle).size(11.0).color(palette.text_dim),
-                    )
-                    .truncate(),
+                    egui::Label::new(RichText::new(&subtitle).size(11.0).color(palette.text_dim))
+                        .truncate(),
                 );
             }
         });
@@ -359,7 +366,8 @@ fn render_actions(
         {
             outcome.actions.push(RowAction::ToggleFavorite(index));
         }
-        if widgets::icon_button(ui, Icon::Tag, 24.0, palette.text_dim, palette, "Edit tags").clicked()
+        if widgets::icon_button(ui, Icon::Tag, 24.0, palette.text_dim, palette, "Edit tags")
+            .clicked()
         {
             outcome.actions.push(RowAction::EditTags(index));
         }
@@ -445,7 +453,11 @@ pub fn show_favorites_bar(ui: &mut egui::Ui, state: &ViewState) -> FavoritesOutc
         return outcome;
     }
 
-    let height = if settings.large_favorites_bar { 62.0 } else { 46.0 };
+    let height = if settings.large_favorites_bar {
+        62.0
+    } else {
+        46.0
+    };
     let bar_color = if settings.transparent_favorites_bar {
         Color32::TRANSPARENT
     } else {
@@ -486,8 +498,16 @@ fn render_favorite(
     let settings = state.settings;
     let palette = state.palette;
     let name = name_of(state, &result.entry);
-    let cell_width = if settings.large_favorites_bar { 74.0 } else { 58.0 };
-    let height = if settings.large_favorites_bar { 50.0 } else { 34.0 };
+    let cell_width = if settings.large_favorites_bar {
+        74.0
+    } else {
+        58.0
+    };
+    let height = if settings.large_favorites_bar {
+        50.0
+    } else {
+        34.0
+    };
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(cell_width, height), Sense::click_and_drag());
 

@@ -177,7 +177,8 @@ impl HistoryData {
         if alias.trim().is_empty() {
             self.aliases.remove(exec);
         } else {
-            self.aliases.insert(exec.to_string(), alias.trim().to_string());
+            self.aliases
+                .insert(exec.to_string(), alias.trim().to_string());
         }
     }
 

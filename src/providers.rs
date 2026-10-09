@@ -10,7 +10,10 @@ pub fn builtin_web_providers() -> Vec<(&'static str, &'static str)> {
         ("DuckDuckGo", "https://duckduckgo.com/?q={}"),
         ("Google", "https://www.google.com/search?q={}"),
         ("Bing", "https://www.bing.com/search?q={}"),
-        ("Wikipedia", "https://en.wikipedia.org/w/index.php?search={}"),
+        (
+            "Wikipedia",
+            "https://en.wikipedia.org/w/index.php?search={}",
+        ),
         ("GitHub", "https://github.com/search?q={}"),
         ("YouTube", "https://www.youtube.com/results?search_query={}"),
         ("Stack Overflow", "https://stackoverflow.com/search?q={}"),
@@ -193,7 +196,10 @@ mod tests {
             provider_url("https://example.org/search?q=%s", "hi"),
             "https://example.org/search?q=hi"
         );
-        assert_eq!(provider_url("https://example.org/", "hi"), "https://example.org/hi");
+        assert_eq!(
+            provider_url("https://example.org/", "hi"),
+            "https://example.org/hi"
+        );
     }
 
     #[test]

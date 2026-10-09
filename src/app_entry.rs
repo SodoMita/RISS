@@ -86,7 +86,9 @@ impl AppEntry {
 /// Remove the desktop entry field codes (`%f`, `%U`, `%i`, …) from an `Exec`
 /// line, leaving a plain command line.
 pub fn strip_field_codes(exec: &str) -> String {
-    let codes = ['%', 'f', 'F', 'u', 'U', 'i', 'c', 'k', 'd', 'D', 'n', 'N', 'v', 'm'];
+    let codes = [
+        '%', 'f', 'F', 'u', 'U', 'i', 'c', 'k', 'd', 'D', 'n', 'N', 'v', 'm',
+    ];
     let mut out = String::new();
     let mut chars = exec.chars().peekable();
     while let Some(c) = chars.next() {
@@ -364,7 +366,11 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             icon: "utilities-terminal".to_string(),
             categories: vec!["System".to_string()],
             keywords: vec!["terminal".to_string(), "console".to_string()],
-            tags: vec!["terminal".to_string(), "console".to_string(), "shell".to_string()],
+            tags: vec![
+                "terminal".to_string(),
+                "console".to_string(),
+                "shell".to_string(),
+            ],
             desktop_file: PathBuf::new(),
             launch_count: 0,
             last_launched: 0,

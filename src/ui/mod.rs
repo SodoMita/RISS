@@ -514,7 +514,8 @@ impl RissApp {
         if settings.search_through_history {
             for previous in self.history.recent_searches(20) {
                 if previous.to_lowercase().contains(&query.to_lowercase()) {
-                    let mut result = self.web_search_result(&settings.default_web_provider, &previous);
+                    let mut result =
+                        self.web_search_result(&settings.default_web_provider, &previous);
                     result.entry.name = previous.clone();
                     result.score = 200;
                     results.push(result);
@@ -533,7 +534,8 @@ impl RissApp {
                 _ => None,
             };
             if let Some((view, title)) = special {
-                let mut result = search::view_result(view, title, "Special list — activate to open");
+                let mut result =
+                    search::view_result(view, title, "Special list — activate to open");
                 result.score = 850;
                 results.push(result);
             }
@@ -1036,7 +1038,8 @@ impl RissApp {
             if action == GestureAction::None {
                 continue;
             }
-            let pressed = ctx.input_mut(|input| input.consume_key(Modifiers::CTRL | Modifiers::ALT, key));
+            let pressed =
+                ctx.input_mut(|input| input.consume_key(Modifiers::CTRL | Modifiers::ALT, key));
             if pressed {
                 self.run_gesture(action);
                 return;
@@ -1227,8 +1230,9 @@ impl RissApp {
                     self.press_started = Some(Instant::now());
                 }
                 if self.settings.long_press_menu && self.last_long_press.is_none() {
-                    let delay =
-                        Duration::from_millis(self.settings.long_press_delay_ms.clamp(200, 2000) as u64);
+                    let delay = Duration::from_millis(
+                        self.settings.long_press_delay_ms.clamp(200, 2000) as u64,
+                    );
                     let fired = self
                         .press_started
                         .map(|started| started.elapsed() >= delay)
@@ -1258,13 +1262,15 @@ impl RissApp {
         let pointer_down = ctx.input(|input| input.pointer.any_down());
         match (self.favorites_hovered, pointer_down) {
             (Some(index), true) => {
-                if self.favorites_press_index != Some(index) || self.favorites_press_started.is_none()
+                if self.favorites_press_index != Some(index)
+                    || self.favorites_press_started.is_none()
                 {
                     self.favorites_press_index = Some(index);
                     self.favorites_press_started = Some(Instant::now());
                 }
-                let delay =
-                    Duration::from_millis(self.settings.long_press_delay_ms.clamp(200, 2000) as u64);
+                let delay = Duration::from_millis(
+                    self.settings.long_press_delay_ms.clamp(200, 2000) as u64,
+                );
                 let fired = self
                     .favorites_press_started
                     .map(|started| started.elapsed() >= delay)
@@ -1385,9 +1391,8 @@ impl RissApp {
         } else {
             46.0
         };
-        let revealed = !settings.hide_search_bar_on_start
-            || self.search_revealed
-            || !self.query.is_empty();
+        let revealed =
+            !settings.hide_search_bar_on_start || self.search_revealed || !self.query.is_empty();
         let search_height = if !revealed {
             36.0
         } else if settings.large_search_bar {
@@ -1421,14 +1426,7 @@ impl RissApp {
         if info_top {
             let mut info_action = None;
             ui.allocate_ui(Vec2::new(width, info_height), |ui| {
-                info_action = show_info_bar(
-                    ui,
-                    &settings,
-                    &palette,
-                    view,
-                    app_count,
-                    result_count,
-                );
+                info_action = show_info_bar(ui, &settings, &palette, view, app_count, result_count);
             });
             if let Some(action) = info_action {
                 self.apply_info_action(action);
@@ -1505,14 +1503,7 @@ impl RissApp {
         if !info_top {
             let mut info_action = None;
             ui.allocate_ui(Vec2::new(width, info_height), |ui| {
-                info_action = show_info_bar(
-                    ui,
-                    &settings,
-                    &palette,
-                    view,
-                    app_count,
-                    result_count,
-                );
+                info_action = show_info_bar(ui, &settings, &palette, view, app_count, result_count);
             });
             if let Some(action) = info_action {
                 self.apply_info_action(action);
@@ -1611,9 +1602,8 @@ impl RissApp {
     fn show_search_bar(&mut self, ui: &mut egui::Ui) {
         let palette = self.palette;
         let settings = self.settings.clone();
-        let revealed = !settings.hide_search_bar_on_start
-            || self.search_revealed
-            || !self.query.is_empty();
+        let revealed =
+            !settings.hide_search_bar_on_start || self.search_revealed || !self.query.is_empty();
 
         if !revealed {
             // KISS' "hide search bar on start": a slim bar that reveals the
@@ -1692,8 +1682,15 @@ impl RissApp {
                 field = Some(response);
                 let has_query = !self.query.is_empty();
                 if has_query
-                    && widgets::icon_button(ui, Icon::Close, 24.0, palette.text_dim, &palette, "Clear")
-                        .clicked()
+                    && widgets::icon_button(
+                        ui,
+                        Icon::Close,
+                        24.0,
+                        palette.text_dim,
+                        &palette,
+                        "Clear",
+                    )
+                    .clicked()
                 {
                     cleared = true;
                 }
@@ -1721,7 +1718,12 @@ impl RissApp {
         if settings.show_keyboard_hints {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
-                for (key, label) in [("\u{2191}\u{2193}", "select"), ("\u{21b5}", "launch"), ("Tab", "cycle"), ("Esc", "back")] {
+                for (key, label) in [
+                    ("\u{2191}\u{2193}", "select"),
+                    ("\u{21b5}", "launch"),
+                    ("Tab", "cycle"),
+                    ("Esc", "back"),
+                ] {
                     widgets::key_cap(ui, key, &palette);
                     let _ = ui.label(RichText::new(label).size(10.0).color(palette.text_dim));
                     ui.add_space(6.0);
@@ -1760,10 +1762,8 @@ impl RissApp {
                 settings_view::SettingsAction::Confirm(dialog) => self.dialog = Some(dialog),
                 settings_view::SettingsAction::AddProvider(name, url) => {
                     let mut next = self.settings.clone();
-                    next.custom_web_providers.push(crate::settings::SearchProvider {
-                        name,
-                        url,
-                    });
+                    next.custom_web_providers
+                        .push(crate::settings::SearchProvider { name, url });
                     next.save();
                     self.settings = next;
                     self.update_results();
@@ -1800,19 +1800,55 @@ impl RissApp {
         let mut items: Vec<(Option<Icon>, String, MenuCommand, bool)> = Vec::new();
         match target {
             MenuTarget::Launcher => {
-                items.push((Some(Icon::Refresh), "Reload applications".into(), MenuCommand::Refresh, true));
-                items.push((Some(Icon::Apps), "All applications".into(), MenuCommand::AllApps, true));
-                items.push((Some(Icon::History), "History".into(), MenuCommand::History, true));
-                items.push((Some(Icon::Filter), "Excluded applications".into(), MenuCommand::Excluded, true));
-                items.push((Some(Icon::Star), "Favorites bar".into(), MenuCommand::ToggleFavoritesBar, true));
-                items.push((Some(Icon::Close), "Clear query".into(), MenuCommand::ClearQuery, true));
-                items.push((Some(Icon::Settings), "Settings".into(), MenuCommand::Settings, true));
+                items.push((
+                    Some(Icon::Refresh),
+                    "Reload applications".into(),
+                    MenuCommand::Refresh,
+                    true,
+                ));
+                items.push((
+                    Some(Icon::Apps),
+                    "All applications".into(),
+                    MenuCommand::AllApps,
+                    true,
+                ));
+                items.push((
+                    Some(Icon::History),
+                    "History".into(),
+                    MenuCommand::History,
+                    true,
+                ));
+                items.push((
+                    Some(Icon::Filter),
+                    "Excluded applications".into(),
+                    MenuCommand::Excluded,
+                    true,
+                ));
+                items.push((
+                    Some(Icon::Star),
+                    "Favorites bar".into(),
+                    MenuCommand::ToggleFavoritesBar,
+                    true,
+                ));
+                items.push((
+                    Some(Icon::Close),
+                    "Clear query".into(),
+                    MenuCommand::ClearQuery,
+                    true,
+                ));
+                items.push((
+                    Some(Icon::Settings),
+                    "Settings".into(),
+                    MenuCommand::Settings,
+                    true,
+                ));
             }
             MenuTarget::Result(index) => {
                 if let Some(result) = self.results.get(*index) {
                     let exec = result.entry.exec.clone();
                     let name = self.display_name(&result.entry);
-                    let pinned = (1..=9u8).find(|key| self.history.shortcut_for(*key) == Some(&exec));
+                    let pinned =
+                        (1..=9u8).find(|key| self.history.shortcut_for(*key) == Some(&exec));
                     let favorite_icon = if result.entry.is_favorite {
                         Icon::StarFilled
                     } else {
@@ -1992,16 +2028,20 @@ impl RissApp {
                         for (icon, label, item, enabled) in &items {
                             ui.horizontal(|ui| {
                                 if let Some(icon) = icon {
-                                    let _ = widgets::icon(ui, *icon, 14.0, palette.text_dim, &palette);
+                                    let _ =
+                                        widgets::icon(ui, *icon, 14.0, palette.text_dim, &palette);
                                     ui.add_space(4.0);
                                 }
-                                let color = if *enabled { palette.text } else { palette.text_dim };
-                                let button = egui::Button::new(
-                                    RichText::new(label).size(12.0).color(color),
-                                )
-                                .fill(Color32::TRANSPARENT)
-                                .stroke(Stroke::NONE)
-                                .min_size(Vec2::new(width - 40.0, row_height));
+                                let color = if *enabled {
+                                    palette.text
+                                } else {
+                                    palette.text_dim
+                                };
+                                let button =
+                                    egui::Button::new(RichText::new(label).size(12.0).color(color))
+                                        .fill(Color32::TRANSPARENT)
+                                        .stroke(Stroke::NONE)
+                                        .min_size(Vec2::new(width - 40.0, row_height));
                                 if ui.add_enabled(*enabled, button).clicked() {
                                     command = Some(item.clone());
                                 }
@@ -2066,15 +2106,15 @@ impl RissApp {
                         );
                         ui.horizontal(|ui| {
                             for (key, mine) in &keys {
-                                let color = if *mine {
-                                    palette.bg
-                                } else {
-                                    palette.text
-                                };
+                                let color = if *mine { palette.bg } else { palette.text };
                                 let button = egui::Button::new(
                                     RichText::new(key.to_string()).size(12.0).color(color),
                                 )
-                                .fill(if *mine { palette.accent } else { palette.surface_alt })
+                                .fill(if *mine {
+                                    palette.accent
+                                } else {
+                                    palette.surface_alt
+                                })
                                 .stroke(Stroke::NONE)
                                 .min_size(Vec2::new(26.0, 26.0));
                                 if ui.add(button).clicked() {
@@ -2085,7 +2125,9 @@ impl RissApp {
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Remove shortcut").size(11.0).color(palette.text_dim),
+                                    RichText::new("Remove shortcut")
+                                        .size(11.0)
+                                        .color(palette.text_dim),
                                 )
                                 .fill(Color32::TRANSPARENT)
                                 .stroke(Stroke::NONE)
@@ -2137,9 +2179,7 @@ impl RissApp {
                                 .size(11.0)
                                 .color(palette.text_dim),
                         );
-                        let _ = ui.add(
-                            egui::TextEdit::singleline(&mut input).desired_width(210.0),
-                        );
+                        let _ = ui.add(egui::TextEdit::singleline(&mut input).desired_width(210.0));
                         ui.horizontal(|ui| {
                             if ui.button("Save").clicked() {
                                 save = true;
@@ -2282,7 +2322,9 @@ impl RissApp {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new(&dialog.cancel).size(12.0).color(palette.text),
+                                        RichText::new(&dialog.cancel)
+                                            .size(12.0)
+                                            .color(palette.text),
                                     )
                                     .fill(palette.surface_alt)
                                     .corner_radius(CornerRadius::same(6))
@@ -2347,8 +2389,15 @@ impl RissApp {
                                     .strong()
                                     .color(palette.text),
                             );
-                            if widgets::icon_button(ui, Icon::Close, 22.0, palette.text_dim, &palette, "Cancel")
-                                .clicked()
+                            if widgets::icon_button(
+                                ui,
+                                Icon::Close,
+                                22.0,
+                                palette.text_dim,
+                                &palette,
+                                "Cancel",
+                            )
+                            .clicked()
                             {
                                 cancel = true;
                             }
@@ -2385,18 +2434,32 @@ fn show_info_bar(
         ui.add_space(6.0);
         let _ = widgets::icon(ui, Icon::Power, 16.0, palette.accent, palette);
         ui.add_space(6.0);
-        let _ = ui.label(RichText::new("RISS").size(13.0).strong().color(palette.accent));
+        let _ = ui.label(
+            RichText::new("RISS")
+                .size(13.0)
+                .strong()
+                .color(palette.accent),
+        );
         let _ = ui.label(
             RichText::new(format!("{} \u{b7} {} shown", app_count, result_count))
                 .size(10.0)
                 .color(palette.text_dim),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if widgets::icon_button(ui, Icon::Kebab, 26.0, palette.text_dim, palette, "Menu").clicked() {
+            if widgets::icon_button(ui, Icon::Kebab, 26.0, palette.text_dim, palette, "Menu")
+                .clicked()
+            {
                 action = Some(InfoAction::Menu);
             }
-            if widgets::icon_button(ui, Icon::Settings, 26.0, palette.text_dim, palette, "Settings")
-                .clicked()
+            if widgets::icon_button(
+                ui,
+                Icon::Settings,
+                26.0,
+                palette.text_dim,
+                palette,
+                "Settings",
+            )
+            .clicked()
             {
                 action = Some(InfoAction::Settings);
             }
@@ -2406,12 +2469,20 @@ fn show_info_bar(
                 action = Some(InfoAction::Refresh);
             }
             let history_active = view == View::History;
-            let color = if history_active { palette.accent } else { palette.text_dim };
+            let color = if history_active {
+                palette.accent
+            } else {
+                palette.text_dim
+            };
             if widgets::icon_button(ui, Icon::History, 26.0, color, palette, "History").clicked() {
                 action = Some(InfoAction::History);
             }
             let all_active = view == View::AllApps;
-            let color = if all_active { palette.accent } else { palette.text_dim };
+            let color = if all_active {
+                palette.accent
+            } else {
+                palette.text_dim
+            };
             if widgets::icon_button(ui, Icon::Apps, 26.0, color, palette, "All apps").clicked() {
                 action = Some(InfoAction::AllApps);
             }
@@ -2447,7 +2518,12 @@ fn show_empty_hint(ui: &mut egui::Ui, palette: &Palette, view: View, query: &str
         }
     };
     ui.centered_and_justified(|ui| {
-        let _ = ui.label(RichText::new(message).size(12.0).color(palette.text_dim).weak());
+        let _ = ui.label(
+            RichText::new(message)
+                .size(12.0)
+                .color(palette.text_dim)
+                .weak(),
+        );
     });
 }
 
@@ -2486,17 +2562,18 @@ fn export_backup() -> String {
 
 fn import_backup() -> Result<String, String> {
     let path = crate::settings::config_dir().join("riss-backup.json");
-    let text = std::fs::read_to_string(&path).map_err(|error| format!("Import failed: {}", error))?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("Import failed: {}", error))?;
     let payload: serde_json::Value =
         serde_json::from_str(&text).map_err(|error| format!("Import failed: {}", error))?;
     if let Some(value) = payload.get("settings") {
-        let settings: Settings =
-            serde_json::from_value(value.clone()).map_err(|error| format!("Import failed: {}", error))?;
+        let settings: Settings = serde_json::from_value(value.clone())
+            .map_err(|error| format!("Import failed: {}", error))?;
         settings.save();
     }
     if let Some(value) = payload.get("history") {
-        let history: HistoryData =
-            serde_json::from_value(value.clone()).map_err(|error| format!("Import failed: {}", error))?;
+        let history: HistoryData = serde_json::from_value(value.clone())
+            .map_err(|error| format!("Import failed: {}", error))?;
         history.save();
     }
     Ok("Settings imported".to_string())
@@ -2584,4 +2661,3 @@ impl eframe::App for RissApp {
         }
     }
 }
-

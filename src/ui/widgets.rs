@@ -65,8 +65,14 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
     match icon {
         Icon::Close => {
             let d = r * 0.62;
-            painter.line_segment([center + Vec2::new(-d, -d), center + Vec2::new(d, d)], stroke);
-            painter.line_segment([center + Vec2::new(-d, d), center + Vec2::new(d, -d)], stroke);
+            painter.line_segment(
+                [center + Vec2::new(-d, -d), center + Vec2::new(d, d)],
+                stroke,
+            );
+            painter.line_segment(
+                [center + Vec2::new(-d, d), center + Vec2::new(d, -d)],
+                stroke,
+            );
         }
         Icon::Check => {
             painter.line_segment(
@@ -142,11 +148,7 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
                 color,
                 Stroke::NONE,
             ));
-            painter.circle_filled(
-                center + Vec2::new(-r * 0.35, -r * 0.35),
-                r * 0.18,
-                bg,
-            );
+            painter.circle_filled(center + Vec2::new(-r * 0.35, -r * 0.35), r * 0.18, bg);
         }
         Icon::History => {
             painter.circle_stroke(center, r * 0.8, stroke);
@@ -164,7 +166,8 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             let origin = center - Vec2::new(cell, cell) - Vec2::new(gap * 0.5, gap * 0.5);
             for row in 0..2 {
                 for col in 0..2 {
-                    let at = origin + Vec2::new((col as f32) * (cell + gap), (row as f32) * (cell + gap));
+                    let at = origin
+                        + Vec2::new((col as f32) * (cell + gap), (row as f32) * (cell + gap));
                     painter.rect_filled(Rect::from_min_size(at, Vec2::s(cell)), 2.0, color);
                 }
             }
@@ -175,7 +178,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
                 let y = center.y + (i as f32 - 1.0) * r * 0.6;
                 painter.circle_filled(center + Vec2::new(-r * 0.7, y), dot, color);
                 painter.line_segment(
-                    [center + Vec2::new(-r * 0.35, y), center + Vec2::new(r * 0.75, y)],
+                    [
+                        center + Vec2::new(-r * 0.35, y),
+                        center + Vec2::new(r * 0.75, y),
+                    ],
                     stroke,
                 );
             }
@@ -223,15 +229,24 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
         }
         Icon::Trash => {
             painter.line_segment(
-                [center + Vec2::new(-r * 0.8, -r * 0.45), center + Vec2::new(r * 0.8, -r * 0.45)],
+                [
+                    center + Vec2::new(-r * 0.8, -r * 0.45),
+                    center + Vec2::new(r * 0.8, -r * 0.45),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + Vec2::new(-r * 0.25, -r * 0.45), center + Vec2::new(-r * 0.25, -r * 0.7)],
+                [
+                    center + Vec2::new(-r * 0.25, -r * 0.45),
+                    center + Vec2::new(-r * 0.25, -r * 0.7),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [center + Vec2::new(r * 0.25, -r * 0.45), center + Vec2::new(r * 0.25, -r * 0.7)],
+                [
+                    center + Vec2::new(r * 0.25, -r * 0.45),
+                    center + Vec2::new(r * 0.25, -r * 0.7),
+                ],
                 stroke,
             );
             painter.add(Shape::convex_polygon(
@@ -346,7 +361,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             painter.circle_stroke(center, r * 0.85, stroke);
             painter.circle_filled(center + Vec2::new(0.0, -r * 0.4), r * 0.12, color);
             painter.line_segment(
-                [center + Vec2::new(0.0, -r * 0.1), center + Vec2::new(0.0, r * 0.45)],
+                [
+                    center + Vec2::new(0.0, -r * 0.1),
+                    center + Vec2::new(0.0, r * 0.45),
+                ],
                 stroke,
             );
         }
@@ -354,7 +372,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             for i in 0..3 {
                 let y = center.y + (i as f32 - 1.0) * r * 0.6;
                 painter.line_segment(
-                    [center + Vec2::new(-r * 0.85, y), center + Vec2::new(r * 0.85, y)],
+                    [
+                        center + Vec2::new(-r * 0.85, y),
+                        center + Vec2::new(r * 0.85, y),
+                    ],
                     stroke,
                 );
                 let knob_x = center.x + (i as f32 - 1.0) * r * 0.45;
@@ -372,7 +393,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
         }
         Icon::Pin => {
             painter.line_segment(
-                [center + Vec2::new(0.0, -r * 0.9), center + Vec2::new(0.0, r * 0.4)],
+                [
+                    center + Vec2::new(0.0, -r * 0.9),
+                    center + Vec2::new(0.0, r * 0.4),
+                ],
                 stroke,
             );
             painter.circle_stroke(center + Vec2::new(0.0, r * 0.55), r * 0.35, stroke);
@@ -400,16 +424,16 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
         Icon::Globe => {
             painter.circle_stroke(center, r * 0.85, stroke);
             painter.line_segment(
-                [center + Vec2::new(-r * 0.85, 0.0), center + Vec2::new(r * 0.85, 0.0)],
+                [
+                    center + Vec2::new(-r * 0.85, 0.0),
+                    center + Vec2::new(r * 0.85, 0.0),
+                ],
                 stroke,
             );
             let mut ellipse = Vec::new();
             for i in 0..=10 {
                 let angle = (i as f32 / 10.0) * std::f32::consts::TAU;
-                ellipse.push(
-                    center
-                        + Vec2::new(angle.cos() * r * 0.42, angle.sin() * r * 0.85),
-                );
+                ellipse.push(center + Vec2::new(angle.cos() * r * 0.42, angle.sin() * r * 0.85));
             }
             painter.add(Shape::closed_line(ellipse, stroke));
         }
@@ -421,7 +445,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
                 bg,
             );
             painter.rect_filled(
-                Rect::from_center_size(center + Vec2::new(0.0, -r * 0.45), Vec2::new(r * 0.9, r * 0.3)),
+                Rect::from_center_size(
+                    center + Vec2::new(0.0, -r * 0.45),
+                    Vec2::new(r * 0.9, r * 0.3),
+                ),
                 1.0,
                 color,
             );
@@ -441,10 +468,7 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             for i in 0..8 {
                 let angle = i as f32 * std::f32::consts::PI / 4.0;
                 let dir = Vec2::new(angle.cos(), angle.sin());
-                painter.line_segment(
-                    [center + dir * r * 0.62, center + dir * r * 0.9],
-                    stroke,
-                );
+                painter.line_segment([center + dir * r * 0.62, center + dir * r * 0.9], stroke);
             }
         }
         Icon::Moon => {
@@ -482,7 +506,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             }
             painter.add(Shape::line(arc, stroke));
             painter.line_segment(
-                [center + Vec2::new(0.0, -r * 0.85), center + Vec2::new(0.0, -r * 0.1)],
+                [
+                    center + Vec2::new(0.0, -r * 0.85),
+                    center + Vec2::new(0.0, -r * 0.1),
+                ],
                 stroke,
             );
         }
@@ -495,7 +522,8 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             );
             for row in 0..2 {
                 for col in 0..4 {
-                    let at = center + Vec2::new((col as f32 - 1.5) * r * 0.38, (row as f32 - 0.5) * r * 0.42);
+                    let at = center
+                        + Vec2::new((col as f32 - 1.5) * r * 0.38, (row as f32 - 0.5) * r * 0.42);
                     painter.circle_filled(at, r * 0.11, color);
                 }
             }
@@ -555,7 +583,13 @@ fn star_points(center: Pos2, outer: f32, inner: f32) -> Vec<Pos2> {
 }
 
 /// Allocate an icon without stealing pointer events from its parent row.
-pub fn icon(ui: &mut Ui, icon: Icon, size: f32, color: Color32, palette: &Palette) -> egui::Response {
+pub fn icon(
+    ui: &mut Ui,
+    icon: Icon,
+    size: f32,
+    color: Color32,
+    palette: &Palette,
+) -> egui::Response {
     let (_, response) = ui.allocate_exact_size(Vec2::s(size), Sense::hover());
     let center = response.rect.center();
     draw_icon(ui, icon, center, size, color, palette.bg);
@@ -573,7 +607,11 @@ pub fn app_badge(
     let (_, response) = ui.allocate_exact_size(Vec2::s(size), Sense::hover());
     let rect = response.rect;
     let color = badge_color(display_name);
-    let radius = if size >= 34.0 { size * 0.28 } else { size * 0.5 };
+    let radius = if size >= 34.0 {
+        size * 0.28
+    } else {
+        size * 0.5
+    };
     ui.painter()
         .rect_filled(rect, CornerRadius::same(radius.round() as u8), color);
 
@@ -627,8 +665,7 @@ pub fn icon_button(
         } else {
             palette.hover
         };
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), fill);
+        ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
     }
     let draw_color = if response.hovered() {
         palette.text
@@ -645,12 +682,24 @@ pub fn icon_button(
 
 /// A pill shaped text button (used for tags and quick filters).
 pub fn chip(ui: &mut Ui, label: &str, active: bool, palette: &Palette) -> bool {
-    let text = RichText::new(label)
-        .size(11.0)
-        .color(if active { palette.bg } else { palette.text_dim });
+    let text =
+        RichText::new(label)
+            .size(11.0)
+            .color(if active { palette.bg } else { palette.text_dim });
     let button = egui::Button::new(text)
-        .fill(if active { palette.accent } else { palette.surface_alt })
-        .stroke(Stroke::new(1.0, if active { palette.accent } else { palette.border }))
+        .fill(if active {
+            palette.accent
+        } else {
+            palette.surface_alt
+        })
+        .stroke(Stroke::new(
+            1.0,
+            if active {
+                palette.accent
+            } else {
+                palette.border
+            },
+        ))
         .corner_radius(CornerRadius::same(10));
     ui.add(button).clicked()
 }
@@ -663,9 +712,12 @@ pub fn clickable(ui: &mut Ui, rect: Rect) -> egui::Response {
 
 /// Horizontal separator honouring the current palette.
 pub fn divider(ui: &mut Ui, palette: &Palette, spacing: f32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), spacing), Sense::hover());
-    ui.painter()
-        .line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, palette.border));
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), spacing), Sense::hover());
+    ui.painter().line_segment(
+        [rect.left_top(), rect.right_top()],
+        Stroke::new(1.0, palette.border),
+    );
 }
 
 /// Small section title used by the settings screen and by the list headers.
@@ -695,12 +747,7 @@ pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let [r1, g1, b1, a1] = a.to_array();
     let [r2, g2, b2, a2] = b.to_array();
     let lerp = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
-    Color32::from_rgba_premultiplied(
-        lerp(r1, r2),
-        lerp(g1, g2),
-        lerp(b1, b2),
-        lerp(a1, a2),
-    )
+    Color32::from_rgba_premultiplied(lerp(r1, r2), lerp(g1, g2), lerp(b1, b2), lerp(a1, a2))
 }
 
 /// Progress of the press animation, used for the touch feedback of rows.
