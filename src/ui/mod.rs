@@ -345,7 +345,7 @@ impl RissApp {
     fn update_results(&mut self) {
         let max_results = self.max_visible_results();
         let query = self.query.trim().to_string();
-        let mut results: Vec<SearchResult> = Vec::new();
+        let results: Vec<SearchResult>;
 
         match self.view {
             View::Apps => {
@@ -417,13 +417,14 @@ impl RissApp {
                     .iter()
                     .filter(|app| self.history.is_excluded(&app.exec))
                     .cloned()
-                    .map(|entry| SearchResult {
-                        entry,
-                        score: 0,
-                        match_type: MatchType::Provider,
-                        action: ResultAction::Excluded {
-                            exec: entry.exec.clone(),
-                        },
+                    .map(|entry| {
+                        let exec = entry.exec.clone();
+                        SearchResult {
+                            entry,
+                            score: 0,
+                            match_type: MatchType::Provider,
+                            action: ResultAction::Excluded { exec },
+                        }
                     })
                     .collect();
                 results.sort_by_key(|result| result.entry.name.to_lowercase());

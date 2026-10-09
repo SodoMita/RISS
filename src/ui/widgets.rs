@@ -621,7 +621,7 @@ pub fn app_badge(
 
     let letter = first_letter(display_name);
     let on_color = if luminance(color) > 140.0 {
-        Color32::from_rgb(24, 24, 30)
+        palette.bg
     } else {
         Color32::WHITE
     };
