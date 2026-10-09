@@ -62,6 +62,8 @@ pub fn build(settings: &Settings, system_dark: bool) -> Palette {
 
     let mut palette = match (settings.theme, dark) {
         (crate::settings::ThemeKind::Solarized, true) => Palette {
+            // Filled in below from the configured main colour.
+            accent: Color32::TRANSPARENT,
             bg: Color32::from_rgb(0, 43, 54),
             surface: Color32::from_rgb(7, 54, 66),
             surface_alt: Color32::from_rgb(13, 65, 78),
@@ -76,6 +78,8 @@ pub fn build(settings: &Settings, system_dark: bool) -> Palette {
             calc_text: Color32::from_rgb(133, 153, 0),
         },
         (crate::settings::ThemeKind::Solarized, false) => Palette {
+            // Filled in below from the configured main colour.
+            accent: Color32::TRANSPARENT,
             bg: Color32::from_rgb(253, 246, 227),
             surface: Color32::from_rgb(246, 237, 219),
             surface_alt: Color32::from_rgb(238, 232, 213),
@@ -90,6 +94,8 @@ pub fn build(settings: &Settings, system_dark: bool) -> Palette {
             calc_text: Color32::from_rgb(133, 153, 0),
         },
         (_, false) => Palette {
+            // Filled in below from the configured main colour.
+            accent: Color32::TRANSPARENT,
             bg: Color32::from_rgb(246, 246, 248),
             surface: Color32::from_rgb(255, 255, 255),
             surface_alt: Color32::from_rgb(238, 238, 244),
@@ -104,6 +110,8 @@ pub fn build(settings: &Settings, system_dark: bool) -> Palette {
             calc_text: Color32::from_rgb(26, 120, 40),
         },
         (_, true) => Palette {
+            // Filled in below from the configured main colour.
+            accent: Color32::TRANSPARENT,
             bg: Color32::from_rgb(24, 24, 28),
             surface: Color32::from_rgb(31, 31, 38),
             surface_alt: Color32::from_rgb(38, 38, 46),
