@@ -356,7 +356,7 @@ impl RissApp {
             .order(egui::Order::Background)
             .fixed_pos(egui::Pos2::ZERO)
             .show(ctx, |ui| {
-                let rect = ctx.content_rect();
+                let rect = ctx.screen_rect();
                 ui.allocate_rect(rect, Sense::click_and_drag())
             });
         self.handle_empty_area_gestures(&bg.inner, ctx);
@@ -506,7 +506,7 @@ impl RissApp {
                 6,
             ))
             .stroke(if selected {
-                Stroke::new(1.0, p.accent)
+                Stroke::new(1.0_f32, p.accent)
             } else {
                 Stroke::NONE
             });
@@ -679,7 +679,7 @@ impl RissApp {
                 p.surface
             })
             .corner_radius(CornerRadius::same(rounded))
-            .stroke(Stroke::new(1.0, p.border))
+            .stroke(Stroke::new(1.0_f32, p.border))
             .inner_margin(egui::Margin::symmetric(8, 5))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -830,63 +830,67 @@ impl RissApp {
                                             changed = true;
                                         }
                                     }
-                                    SettingKind::Choice(options) => ui.horizontal(|ui| {
-                                        ui.label(spec.title);
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                let value = self
-                                                    .settings
-                                                    .values
-                                                    .entry(spec.key.to_owned())
-                                                    .or_default();
-                                                egui::ComboBox::from_id_salt(spec.key)
-                                                    .selected_text(value.as_str())
-                                                    .width(140.0)
-                                                    .show_ui(ui, |ui| {
-                                                        for option in options {
-                                                            if ui
-                                                                .selectable_value(
-                                                                    value,
-                                                                    (*option).to_owned(),
-                                                                    *option,
-                                                                )
-                                                                .changed()
-                                                            {
-                                                                changed = true;
+                                    SettingKind::Choice(options) => {
+                                        ui.horizontal(|ui| {
+                                            ui.label(spec.title);
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    let value = self
+                                                        .settings
+                                                        .values
+                                                        .entry(spec.key.to_owned())
+                                                        .or_default();
+                                                    egui::ComboBox::from_id_salt(spec.key)
+                                                        .selected_text(value.as_str())
+                                                        .width(140.0)
+                                                        .show_ui(ui, |ui| {
+                                                            for option in options {
+                                                                if ui
+                                                                    .selectable_value(
+                                                                        value,
+                                                                        (*option).to_owned(),
+                                                                        *option,
+                                                                    )
+                                                                    .changed()
+                                                                {
+                                                                    changed = true;
+                                                                }
                                                             }
-                                                        }
-                                                    });
-                                            },
-                                        );
-                                    }),
-                                    SettingKind::Number { min, max } => ui.horizontal(|ui| {
-                                        ui.label(spec.title);
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                let value = self
-                                                    .settings
-                                                    .values
-                                                    .entry(spec.key.to_owned())
-                                                    .or_default();
-                                                let mut number = value
-                                                    .parse::<usize>()
-                                                    .unwrap_or(min)
-                                                    .clamp(min, max);
-                                                if ui
-                                                    .add(
-                                                        egui::DragValue::new(&mut number)
-                                                            .range(min..=max),
-                                                    )
-                                                    .changed()
-                                                {
-                                                    *value = number.to_string();
-                                                    changed = true;
-                                                }
-                                            },
-                                        );
-                                    }),
+                                                        });
+                                                },
+                                            );
+                                        });
+                                    }
+                                    SettingKind::Number { min, max } => {
+                                        ui.horizontal(|ui| {
+                                            ui.label(spec.title);
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    let value = self
+                                                        .settings
+                                                        .values
+                                                        .entry(spec.key.to_owned())
+                                                        .or_default();
+                                                    let mut number = value
+                                                        .parse::<usize>()
+                                                        .unwrap_or(min)
+                                                        .clamp(min, max);
+                                                    if ui
+                                                        .add(
+                                                            egui::DragValue::new(&mut number)
+                                                                .range(min..=max),
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        *value = number.to_string();
+                                                        changed = true;
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    }
                                     SettingKind::Text => {
                                         ui.label(spec.title);
                                         let value = self
