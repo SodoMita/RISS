@@ -1,0 +1,85 @@
+name: Diagnostics
+
+# Temporary helper used while porting the launcher: it runs the same checks as
+# test.yml but reports every compiler / clippy diagnostic as a workflow
+# annotation, so they can be read without downloading the job log.
+# This file is removed once the port is finished.
+
+on:
+  push:
+    branches: [ arena/3aa9449a-riss ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  diagnostics:
+    name: Clippy & test diagnostics
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libgl1-mesa-dev libfontconfig1-dev pkg-config libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Rust cache
+        uses: Swatiner/rust-cache@v2
+        with:
+          shared-key: "test-build"
+
+      - name: Prepare helper
+        run: |
+          cat > /tmp/annotate.py <<'PY'
+          import json, sys
+          path, tag = sys.argv[1], sys.argv[2]
+          count = 0
+          for line in open(path):
+              try:
+                  msg = json.loads(line)
+              except Exception:
+                  continue
+              if msg.get('reason') != 'compiler-message':
+                  continue
+              m = msg['message']
+              if m.get('level') not in ('error', 'warning'):
+                  continue
+              spans = [s for s in m.get('spans', []) if s.get('is_primary')]
+              if not spans:
+                  continue
+              s = spans[0]
+              code = (m.get('code') or {}).get('code') or ''
+              text = m['message'].replace('\n', ' ')[:700]
+              print("::error file=%s,line=%s,col=%s,title=%s %s::%s" % (
+                  s['file_name'], s['line_start'], s['column_start'], tag, code, text))
+              count += 1
+              if count > 80:
+                  break
+          PY
+          echo prepared
+
+      - name: Report clippy diagnostics
+        run: |
+          rm -f /tmp/annotations.txt
+          cargo clippy --all-targets --message-format=json > /tmp/clippy.json 2>/tmp/clippy.err || true
+          python3 /tmp/annotate.py /tmp/clippy.json clippy
+          cat /tmp/annotations.txt
+          echo "--- stderr tail ---"
+          tail -n 30 /tmp/clippy.err
+
+      - name: Report test failures
+        run: |
+          rm -f /tmp/annotations.txt
+          cargo test --message-format=json > /tmp/test.json 2>/tmp/test.err || true
+          python3 /tmp/annotate.py /tmp/test.json test
+          cat /tmp/annotations.txt
+          echo "--- stderr tail ---"
+          tail -n 30 /tmp/test.err
