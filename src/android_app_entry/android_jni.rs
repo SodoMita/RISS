@@ -3,8 +3,9 @@
 use jni::objects::{JObject, JValue};
 use jni::sys::{jobject, JavaVM as JavaVMPtr};
 use jni::JNIEnv;
-use log::{error, info, warn};
+use log::{error, info};
 use once_cell::sync::OnceCell;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use winit::platform::android::activity::AndroidApp;
 
@@ -22,6 +23,18 @@ pub fn set_android_app(app: AndroidApp) {
 /// Get the stored AndroidApp
 fn get_android_app() -> Option<std::sync::MutexGuard<'static, AndroidApp>> {
     ANDROID_APP.get().map(|m| m.lock().unwrap())
+}
+
+/// App-private storage directory (the `Context.getFilesDir()` equivalent).
+///
+/// Used for `settings.json` and `history.json`: the process working directory
+/// is not writable on Android, so nothing may be stored relative to it.
+pub fn internal_data_path() -> Option<PathBuf> {
+    let path = get_android_app().and_then(|app| app.internal_data_path());
+    if path.is_none() {
+        error!("Could not resolve the Android internal data path");
+    }
+    path
 }
 
 /// Discover all installed applications using JNI and PackageManager

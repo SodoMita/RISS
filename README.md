@@ -97,16 +97,30 @@ cargo build --release
 
 ## Configuration
 
-History and favorites are stored in:
+Settings and history are stored as JSON:
+
 ```
-~/.config/riss-launcher/history.json
+~/.config/riss-launcher/settings.json   # all KISS-compatible preferences
+~/.config/riss-launcher/history.json    # launch counts, timestamps, favorites, tags
 ```
 
-This file contains:
+On Android the same two files live in the app-private directory
+(`Context.getFilesDir()`, e.g. `/data/data/com.risslauncher.app/files/`).
+Set `RISS_DATA_DIR` to store them somewhere else.
+
+Writes are atomic, and a file that cannot be parsed is moved aside as
+`<name>.corrupt-<timestamp>` instead of being overwritten, so data is never
+lost silently.
+
+`history.json` contains:
 - Launch counts for each app
 - Last launch timestamps
 - Favorite apps list
 - Custom tags
+
+The empty-screen list can be sorted by recency, frequency, `frecent`
+(usage that decays with age) or alphabetically via the *History sorting*
+setting.
 
 ## Screenshots
 
@@ -147,10 +161,14 @@ Modify the window size in `src/main.rs`:
 riss-launcher/
 ├── src/
 │   ├── main.rs          # Entry point
+│   ├── lib.rs           # Android entry point (cdylib)
 │   ├── ui.rs            # UI components and main app state
 │   ├── app_entry.rs     # App discovery and .desktop file parsing
+│   ├── android_app_entry.rs  # Android app discovery and launching via JNI
 │   ├── search.rs        # Search engine and fuzzy matching
-│   └── history.rs       # History tracking and persistence
+│   ├── settings.rs      # KISS-compatible preferences
+│   ├── storage.rs       # Atomic, crash-safe persistence for both data files
+│   └── history.rs       # History tracking, favorites and ranking
 ├── Cargo.toml           # Dependencies
 └── README.md           # This file
 ```
