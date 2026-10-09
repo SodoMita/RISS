@@ -610,7 +610,11 @@ mod tests {
 
     #[test]
     fn exact_match_wins() {
-        let apps = vec![app("Files", &[]), app("Terminal", &[])];
+        let apps = vec![
+            app("Files", &[]),
+            app("Filesystem", &[]),
+            app("Terminal", &[]),
+        ];
         let engine = SearchEngine::new();
         let config = SearchConfig {
             max_results: 10,
@@ -618,7 +622,12 @@ mod tests {
         };
         let results = engine.search("files", &apps, &HashMap::new(), &config);
         assert_eq!(results[0].entry.name, "Files");
-        assert_eq!(results[0].match_type, MatchType::Prefix);
+        assert_eq!(results[0].match_type, MatchType::Exact);
+
+        // A longer query that only covers the start of the name is a prefix hit.
+        let partial = engine.search("fil", &apps, &HashMap::new(), &config);
+        assert_eq!(partial[0].entry.name, "Files");
+        assert_eq!(partial[0].match_type, MatchType::Prefix);
     }
 
     #[test]
