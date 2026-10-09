@@ -52,7 +52,7 @@ jobs:
         if [ -n "$(git status --short src)" ]; then
           N=5
           while IFS= read -r PART; do
-            echo "::error file=src/ui.rs,line=$((N + 1))::RUSTFMT_PATCH_${N}=${PART}"
+            echo "::error file=src/ui.rs,line=1::RUSTFMT_PATCH_${N}=${PART}"
             N=$((N + 1))
           done < /tmp/rustfmt-patch
           exit 1
