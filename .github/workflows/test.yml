@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-permissions:
-  contents: read
-  pull-requests: write
-
 env:
   CARGO_TERM_COLOR: always
 
@@ -50,15 +46,7 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Check formatting
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        cargo fmt
-        if [ -n "$(git status --short src)" ]; then
-          PATCH=$(git diff -- src | gzip -c | base64 -w0)
-          gh pr comment ${{ github.event.pull_request.number }} --body "RUSTFMT_PATCH_GZIP_BASE64=${PATCH}"
-          exit 1
-        fi
+      run: cargo fmt -- --check
     
     - name: Run clippy
       run: cargo clippy -- -D warnings
