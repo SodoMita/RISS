@@ -7,7 +7,8 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: write
+  contents: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -49,14 +50,14 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Check formatting
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         cargo fmt
         if [ -n "$(git status --short src)" ]; then
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add src
-          git commit -m "Apply rustfmt"
-          git push origin HEAD:${{ github.head_ref }}
+          PATCH=$(git diff -- src | gzip -c | base64 -w0)
+          gh pr comment ${{ github.event.pull_request.number }} --body "RUSTFMT_PATCH_GZIP_BASE64=${PATCH}"
+          exit 1
         fi
     
     - name: Run clippy
