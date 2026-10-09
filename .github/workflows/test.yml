@@ -48,9 +48,13 @@ jobs:
     - name: Check formatting
       run: |
         cargo fmt
-        PATCH=$(git diff -- src | gzip -c | base64 -w0)
+        git diff -- src | gzip -c | base64 -w0 | fold -w 3500 > /tmp/rustfmt-patch
         if [ -n "$(git status --short src)" ]; then
-          echo "::error file=src/ui.rs::RUSTFMT_PATCH_GZIP_BASE64=${PATCH}"
+          N=0
+          while IFS= read -r PART; do
+            echo "::error file=src/ui.rs,line=$((N + 1))::RUSTFMT_PATCH_${N}=${PART}"
+            N=$((N + 1))
+          done < /tmp/rustfmt-patch
           exit 1
         fi
     
