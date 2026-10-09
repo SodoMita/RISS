@@ -230,7 +230,7 @@ fn render_filtered(
                         let text = RichText::new("Show").size(11.0).color(palette.accent);
                         let button = egui::Button::new(text)
                             .fill(Color32::TRANSPARENT)
-                            .stroke(Stroke::new(1.0, palette.border))
+                            .stroke(Stroke::new(1.0f32, palette.border))
                             .min_size(Vec2::new(58.0, 22.0));
                         if ui.add(button).clicked() {
                             state.section = entry.section;
@@ -399,7 +399,7 @@ fn choice_row(
                         Color32::TRANSPARENT
                     })
                     .stroke(Stroke::new(
-                        1.0,
+                        1.0f32,
                         if selected {
                             palette.accent
                         } else {
@@ -433,7 +433,7 @@ fn action_row(ui: &mut egui::Ui, label: &str, hint: &str, button: &str, palette:
                 .add(
                     egui::Button::new(text)
                         .fill(palette.surface_alt)
-                        .stroke(Stroke::new(1.0, palette.border))
+                        .stroke(Stroke::new(1.0f32, palette.border))
                         .corner_radius(CornerRadius::same(6))
                         .min_size(Vec2::new(84.0, 26.0)),
                 )

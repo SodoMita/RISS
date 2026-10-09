@@ -1334,24 +1334,24 @@ impl RissApp {
         visuals.faint_bg_color = palette.surface;
         visuals.code_bg_color = palette.surface_alt;
         visuals.selection.bg_fill = palette.accent;
-        visuals.selection.stroke = Stroke::new(1.0, palette.accent);
+        visuals.selection.stroke = Stroke::new(1.0f32, palette.accent);
         visuals.hyperlink_color = palette.accent;
         visuals.warn_fg_color = palette.favorite;
         visuals.error_fg_color = palette.danger;
         visuals.widgets.noninteractive.bg_fill = palette.surface;
         visuals.widgets.noninteractive.weak_bg_fill = palette.surface;
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, palette.text);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0f32, palette.text);
         // egui draws the scroll bar with the non interactive background stroke.
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(6.0, self.palette.scrollbar());
+        visuals.widgets.noninteractive.bg_stroke = Stroke::new(6.0f32, self.palette.scrollbar());
         visuals.widgets.inactive.bg_fill = palette.surface_alt;
         visuals.widgets.inactive.weak_bg_fill = palette.surface_alt;
-        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, palette.text);
+        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0f32, palette.text);
         visuals.widgets.hovered.bg_fill = palette.hover;
         visuals.widgets.hovered.weak_bg_fill = palette.hover;
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, palette.text);
+        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0f32, palette.text);
         visuals.widgets.active.bg_fill = palette.selected;
         visuals.widgets.active.weak_bg_fill = palette.selected;
-        visuals.widgets.active.fg_stroke = Stroke::new(1.5, palette.accent);
+        visuals.widgets.active.fg_stroke = Stroke::new(1.5f32, palette.accent);
         style.visuals = visuals;
         ctx.set_style(style);
     }
@@ -1612,7 +1612,7 @@ impl RissApp {
             egui::Frame::NONE
                 .fill(palette.surface)
                 .inner_margin(Margin::symmetric(10, 8))
-                .stroke(Stroke::new(1.0, palette.border))
+                .stroke(Stroke::new(1.0f32, palette.border))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let _ = widgets::icon(ui, Icon::Search, 15.0, palette.text_dim, &palette);
@@ -1654,7 +1654,7 @@ impl RissApp {
             .fill(bar_color)
             .corner_radius(CornerRadius::same(radius))
             .inner_margin(Margin::symmetric(10, 6))
-            .stroke(Stroke::new(1.0, palette.border));
+            .stroke(Stroke::new(1.0f32, palette.border));
 
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -2022,7 +2022,7 @@ impl RissApp {
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(6))
-                    .stroke(Stroke::new(1.0, palette.border))
+                    .stroke(Stroke::new(1.0f32, palette.border))
                     .show(ui, |ui| {
                         ui.set_width(width - 12.0);
                         for (icon, label, item, enabled) in &items {
@@ -2097,7 +2097,7 @@ impl RissApp {
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(8))
-                    .stroke(Stroke::new(1.0, palette.border))
+                    .stroke(Stroke::new(1.0f32, palette.border))
                     .show(ui, |ui| {
                         let _ = ui.label(
                             RichText::new("Pin to a number")
@@ -2172,7 +2172,7 @@ impl RissApp {
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(8))
-                    .stroke(Stroke::new(1.0, palette.accent))
+                    .stroke(Stroke::new(1.0f32, palette.accent))
                     .show(ui, |ui| {
                         let _ = ui.label(
                             RichText::new("Tags (comma separated)")
@@ -2223,7 +2223,7 @@ impl RissApp {
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::same(8))
-                    .stroke(Stroke::new(1.0, palette.accent))
+                    .stroke(Stroke::new(1.0f32, palette.accent))
                     .show(ui, |ui| {
                         let _ = ui.label(
                             RichText::new("Rename application")
@@ -2290,7 +2290,7 @@ impl RissApp {
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::same(14))
-                    .stroke(Stroke::new(1.0, palette.border))
+                    .stroke(Stroke::new(1.0f32, palette.border))
                     .show(ui, |ui| {
                         ui.set_width(width - 28.0);
                         let _ = ui.label(
@@ -2379,7 +2379,7 @@ impl RissApp {
                     .fill(palette.surface)
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::symmetric(12, 8))
-                    .stroke(Stroke::new(1.0, palette.accent))
+                    .stroke(Stroke::new(1.0f32, palette.accent))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let _ = widgets::icon(ui, Icon::Clock, 18.0, palette.accent, &palette);

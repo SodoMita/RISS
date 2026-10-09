@@ -333,7 +333,7 @@ pub enum GestureAction {
 }
 
 impl GestureAction {
-    pub const ALL: [GestureAction; 10] = [
+    pub const ALL: [GestureAction; 11] = [
         GestureAction::None,
         GestureAction::ShowHistory,
         GestureAction::ShowAllApps,

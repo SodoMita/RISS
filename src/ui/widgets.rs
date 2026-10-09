@@ -59,7 +59,7 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
     let painter = ui.painter();
     let s = size.max(4.0);
     let r = s * 0.5;
-    let thin = (s * 0.09).clamp(1.0, 2.2);
+    let thin: f32 = (s * 0.09).clamp(1.0f32, 2.2f32);
     let stroke = Stroke::new(thin, color);
 
     match icon {
@@ -131,7 +131,11 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
         Icon::Star | Icon::StarFilled => {
             let outer = star_points(center, r * 0.95, r * 0.42);
             if icon == Icon::StarFilled {
-                painter.add(Shape::convex_polygon(outer, color, Stroke::new(1.0, color)));
+                painter.add(Shape::convex_polygon(
+                    outer,
+                    color,
+                    Stroke::new(1.0f32, color),
+                ));
             } else {
                 painter.add(Shape::convex_polygon(outer, bg, stroke));
             }
@@ -693,7 +697,7 @@ pub fn chip(ui: &mut Ui, label: &str, active: bool, palette: &Palette) -> bool {
             palette.surface_alt
         })
         .stroke(Stroke::new(
-            1.0,
+            1.0f32,
             if active {
                 palette.accent
             } else {
@@ -716,7 +720,7 @@ pub fn divider(ui: &mut Ui, palette: &Palette, spacing: f32) {
         ui.allocate_exact_size(Vec2::new(ui.available_width(), spacing), Sense::hover());
     ui.painter().line_segment(
         [rect.left_top(), rect.right_top()],
-        Stroke::new(1.0, palette.border),
+        Stroke::new(1.0f32, palette.border),
     );
 }
 
@@ -735,7 +739,7 @@ pub fn key_cap(ui: &mut Ui, label: &str, palette: &Palette) {
     let text = RichText::new(label).size(10.0).color(palette.text_dim);
     let button = egui::Button::new(text)
         .fill(palette.surface_alt)
-        .stroke(Stroke::new(1.0, palette.border))
+        .stroke(Stroke::new(1.0f32, palette.border))
         .corner_radius(CornerRadius::same(4))
         .min_size(Vec2::new(label.len() as f32 * 7.0 + 12.0, 18.0));
     let _ = ui.add(button);

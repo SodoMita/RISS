@@ -170,7 +170,7 @@ fn render_row(
     if settings.show_separators && index > 0 {
         ui.painter().line_segment(
             [rect.left_top(), rect.right_top()],
-            Stroke::new(1.0, palette.border),
+            Stroke::new(1.0f32, palette.border),
         );
     }
 
@@ -469,7 +469,7 @@ pub fn show_favorites_bar(ui: &mut egui::Ui, state: &ViewState) -> FavoritesOutc
         .fill(bar_color)
         .corner_radius(CornerRadius::same(corner))
         .inner_margin(Margin::symmetric(8, 6))
-        .stroke(Stroke::new(1.0, palette.border))
+        .stroke(Stroke::new(1.0f32, palette.border))
         .show(ui, |ui| {
             egui::ScrollArea::horizontal()
                 .id_salt(egui::Id::new("riss_favorites_scroll"))

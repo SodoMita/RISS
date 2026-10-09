@@ -270,7 +270,7 @@ impl HistoryData {
             .launch_counts
             .iter()
             .filter(|(_, &c)| c > 0)
-            .map(|(k, &v)| (k, v))
+            .map(|(exec, &count)| (exec.clone(), count))
             .collect();
         counts.sort_by_key(|a| std::cmp::Reverse(a.1));
         counts.truncate(n);
