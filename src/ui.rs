@@ -4,866 +4,425 @@ use crate::android_app_entry::{self as app_entry, AppEntry};
 use crate::app_entry::{self, AppEntry};
 use crate::history::HistoryData;
 use crate::search::{self, MatchType, SearchEngine, SearchResult};
+use crate::settings::{self, SettingKind, SettingsData};
 use eframe::egui;
-use egui::{Color32, CornerRadius, FontId, RichText, Stroke, Vec2};
+use egui::{Color32, CornerRadius, FontId, RichText, Sense, Stroke, Vec2};
+use std::time::{Duration, Instant};
 
-/// RISS color scheme
-struct Colors;
-
-impl Colors {
-    const BG: Color32 = Color32::from_rgb(30, 30, 46);
-    const BG_LIGHT: Color32 = Color32::from_rgb(40, 40, 58);
-    const BG_HOVER: Color32 = Color32::from_rgb(55, 55, 80);
-    const TEXT: Color32 = Color32::from_rgb(205, 214, 244);
-    const TEXT_DIM: Color32 = Color32::from_rgb(147, 153, 178);
-    const ACCENT: Color32 = Color32::from_rgb(137, 180, 250);
-    const ACCENT_DIM: Color32 = Color32::from_rgb(110, 145, 210);
-    const FAVORITE: Color32 = Color32::from_rgb(250, 204, 94);
-    const BORDER: Color32 = Color32::from_rgb(69, 71, 90);
-    const SEARCH_BG: Color32 = Color32::from_rgb(49, 50, 68);
-    const CALC_BG: Color32 = Color32::from_rgb(50, 70, 50);
-    const CALC_TEXT: Color32 = Color32::from_rgb(166, 227, 161);
+#[derive(Clone, Copy)]
+struct Palette {
+    bg: Color32,
+    surface: Color32,
+    hover: Color32,
+    text: Color32,
+    dim: Color32,
+    accent: Color32,
+    border: Color32,
 }
 
-/// Main application state
+impl Palette {
+    fn from_settings(settings: &SettingsData) -> Self {
+        let light = settings.value("theme") == "light"
+            || (settings.value("night-mode") == "light" && settings.value("theme") != "dark");
+        let accent = parse_hex(settings.value("primary-color")).unwrap_or(Color32::from_rgb(137, 180, 250));
+        if light {
+            Self { bg: Color32::from_rgb(246, 247, 251), surface: Color32::WHITE, hover: Color32::from_rgb(230, 234, 244), text: Color32::from_rgb(30, 32, 40), dim: Color32::from_rgb(99, 104, 120), accent, border: Color32::from_rgb(210, 214, 224) }
+        } else {
+            Self { bg: Color32::from_rgb(20, 20, 28), surface: Color32::from_rgb(35, 35, 47), hover: Color32::from_rgb(51, 52, 68), text: Color32::from_rgb(232, 234, 245), dim: Color32::from_rgb(151, 155, 174), accent, border: Color32::from_rgb(67, 68, 84) }
+        }
+    }
+}
+
+fn parse_hex(value: &str) -> Option<Color32> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 { return None; }
+    let n = u32::from_str_radix(hex, 16).ok()?;
+    Some(Color32::from_rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Screen { Launcher, Settings }
+
 pub struct RissApp {
-    /// Search query
     query: String,
-    /// All discovered applications
     apps: Vec<AppEntry>,
-    /// Current search results
     results: Vec<SearchResult>,
-    /// Search engine
     search_engine: SearchEngine,
-    /// History data
     history: HistoryData,
-    /// Selected result index (for keyboard nav)
+    settings: SettingsData,
     selected_index: usize,
-    /// Whether the search bar has focus
-    search_focused: bool,
-    /// Status message (shown briefly)
-    status_message: Option<(String, std::time::Instant)>,
-    /// Tag editing state
+    screen: Screen,
+    show_all_apps: bool,
+    status_message: Option<(String, Instant)>,
     editing_tags: Option<String>,
     tag_input: String,
+    settings_query: String,
+    touch_start: Option<(egui::Pos2, f64)>,
+    last_empty_tap: Option<(egui::Pos2, f64)>,
 }
 
 impl RissApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let settings = SettingsData::load();
         let history = HistoryData::load();
-        let mut apps = app_entry::discover_apps();
-
-        // Merge in builtin entries (only if no similar app found)
-        let builtins = app_entry::builtin_entries();
-        for builtin in builtins {
-            let dominated = apps
-                .iter()
-                .any(|a| a.name.to_lowercase() == builtin.name.to_lowercase());
-            if !dominated {
-                apps.push(builtin);
-            }
-        }
-
-        // Merge history data into apps
-        for app in &mut apps {
-            app.launch_count = history.get_launch_count(&app.exec);
-            app.last_launched = history.get_last_launched(&app.exec);
-            app.is_favorite = history.is_favorite(&app.exec);
-            app.tags = history.get_tags(&app.exec);
-        }
-
-        let search_engine = SearchEngine::new();
-
-        let mut riss = Self {
-            query: String::new(),
-            apps,
-            results: Vec::new(),
-            search_engine,
-            history,
-            selected_index: 0,
-            search_focused: true,
-            status_message: None,
-            editing_tags: None,
-            tag_input: String::new(),
+        let mut app = Self {
+            query: String::new(), apps: Vec::new(), results: Vec::new(), search_engine: SearchEngine::new(),
+            history, settings, selected_index: 0, screen: Screen::Launcher, show_all_apps: false,
+            status_message: None, editing_tags: None, tag_input: String::new(), settings_query: String::new(),
+            touch_start: None, last_empty_tap: None,
         };
+        app.reload_apps();
+        app
+    }
 
-        riss.update_results();
-        riss
+    fn reload_apps(&mut self) {
+        let mut apps = app_entry::discover_apps();
+        for builtin in app_entry::builtin_entries() {
+            if !apps.iter().any(|a| a.name.eq_ignore_ascii_case(&builtin.name)) { apps.push(builtin); }
+        }
+        let excluded = self.settings.value("edit-excluded-apps");
+        let exclusions: Vec<&str> = excluded.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+        apps.retain(|a| !exclusions.iter().any(|x| a.exec == *x || a.name.eq_ignore_ascii_case(x)));
+        for app in &mut apps {
+            app.launch_count = self.history.get_launch_count(&app.exec);
+            app.last_launched = self.history.get_last_launched(&app.exec);
+            app.is_favorite = self.history.is_favorite(&app.exec);
+            let custom = self.history.get_tags(&app.exec);
+            if !custom.is_empty() { app.tags = custom; }
+        }
+        self.apps = apps;
+        self.update_results();
     }
 
     fn update_results(&mut self) {
-        if self.query.trim().is_empty() {
-            // Show ALL apps when query is empty, sorted by favorites first, then by name
-            let mut all_apps: Vec<SearchResult> = self
-                .apps
-                .iter()
-                .map(|app| SearchResult {
-                    entry: app.clone(),
-                    score: if app.is_favorite { 1000 } else { 0 } + app.launch_count as i64,
-                    match_type: MatchType::Exact,
-                })
-                .collect();
-
-            // Sort: favorites first, then by launch count, then alphabetically
-            all_apps.sort_by(|a, b| {
-                b.score.cmp(&a.score).then_with(|| {
-                    a.entry
-                        .name
-                        .to_lowercase()
-                        .cmp(&b.entry.name.to_lowercase())
-                })
-            });
-
-            self.results = all_apps;
+        let limit = self.settings.number("number-of-display-elements", 20);
+        if !self.query.trim().is_empty() {
+            self.results = self.search_engine.search(&self.query, &self.apps, if limit == 0 { usize::MAX } else { limit });
+        } else if self.show_all_apps {
+            self.results = self.apps.iter().cloned().map(|entry| SearchResult { entry, score: 0, match_type: MatchType::Fuzzy }).collect();
+            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
+        } else if self.settings.enabled("history-hide") {
+            self.results.clear();
         } else {
-            self.results = self.search_engine.search(&self.query, &self.apps, 20);
+            self.results = self.search_engine.get_default_apps(&self.apps, if limit == 0 { usize::MAX } else { limit });
+            match self.settings.value("history-mode") {
+                "alphabetical" => self.results.sort_by_key(|r| r.entry.name.to_lowercase()),
+                "frequency" => self.results.sort_by_key(|r| std::cmp::Reverse(r.entry.launch_count)),
+                _ => self.results.sort_by_key(|r| std::cmp::Reverse(r.entry.last_launched)),
+            }
         }
-        self.selected_index = 0;
+        self.selected_index = self.selected_index.min(self.results.len().saturating_sub(1));
     }
 
-    fn launch_app(&mut self, index: usize) {
-        if let Some(result) = self.results.get(index) {
-            let exec = result.entry.exec.clone();
-            let name = result.entry.name.clone();
-
-            match result.entry.launch() {
-                Ok(()) => {
-                    self.history.record_launch(&exec);
-                    // Update in-memory state
-                    for app in &mut self.apps {
-                        if app.exec == exec {
-                            app.launch_count = self.history.get_launch_count(&app.exec);
-                            app.last_launched = self.history.get_last_launched(&app.exec);
-                        }
-                    }
+    fn launch_exec(&mut self, exec: &str) {
+        let Some(entry) = self.apps.iter().find(|a| a.exec == exec).cloned() else { return; };
+        match entry.launch() {
+            Ok(()) => {
+                if !self.settings.enabled("freeze-history") && self.settings.enabled("enable-app-history") {
+                    self.history.record_launch(exec);
                     self.history.save();
-                    self.set_status(format!("Launched {}", name));
-                    // Clear search
-                    self.query.clear();
-                    self.update_results();
                 }
-                Err(e) => {
-                    self.set_status(format!("Error: {}", e));
-                }
+                self.query.clear(); self.show_all_apps = false; self.reload_apps();
+                self.set_status(format!("Opened {}", entry.name));
             }
+            Err(error) => self.set_status(error),
         }
     }
 
-    fn toggle_favorite(&mut self, index: usize) {
-        // Clone the necessary data to avoid borrow conflicts
-        let entry_data = self
-            .results
-            .get(index)
-            .map(|r| (r.entry.exec.clone(), r.entry.name.clone()));
+    fn launch_result(&mut self, index: usize) {
+        if let Some(result) = self.results.get(index) { let exec = result.entry.exec.clone(); self.launch_exec(&exec); }
+    }
 
-        if let Some((exec, name)) = entry_data {
-            let is_fav = self.history.toggle_favorite(&exec);
-            for app in &mut self.apps {
-                if app.exec == exec {
-                    app.is_favorite = is_fav;
-                }
-            }
-            self.history.save();
+    fn toggle_favorite_exec(&mut self, exec: &str) {
+        self.history.toggle_favorite(exec); self.history.save(); self.reload_apps();
+    }
+
+    fn set_status(&mut self, text: impl Into<String>) { self.status_message = Some((text.into(), Instant::now())); }
+
+    fn handle_keys(&mut self, ctx: &egui::Context) {
+        if self.screen == Screen::Settings {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { self.screen = Screen::Launcher; }
+            return;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if !self.query.is_empty() { self.query.clear(); } else { self.show_all_apps = false; }
             self.update_results();
-            self.set_status(if is_fav {
-                format!("Added {} to favorites", name)
-            } else {
-                format!("Removed {} from favorites", name)
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) { self.selected_index = self.selected_index.saturating_sub(1); }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !self.results.is_empty() { self.selected_index = (self.selected_index + 1).min(self.results.len() - 1); }
+        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !self.results.is_empty() { self.launch_result(self.selected_index); }
+    }
+
+    fn perform_gesture(&mut self, action: &str, ctx: &egui::Context) {
+        match action {
+            "display-keyboard" => ctx.memory_mut(|m| m.request_focus(egui::Id::new("riss-search"))),
+            "hide-keyboard" => ctx.memory_mut(|m| m.surrender_focus(egui::Id::new("riss-search"))),
+            "display-apps" => { self.show_all_apps = true; self.update_results(); }
+            "display-history" => { self.show_all_apps = false; self.update_results(); }
+            "display-menu" => self.screen = Screen::Settings,
+            "go-to-homescreen" => { self.query.clear(); self.show_all_apps = false; self.update_results(); }
+            "launch-pojo" => self.set_status("Choose a launch target in gesture settings"),
+            "display-notifications" | "display-quicksettings" => self.set_status("This system gesture is not available on this platform"),
+            _ => {}
+        }
+    }
+
+    fn handle_empty_area_gestures(&mut self, response: &egui::Response, ctx: &egui::Context) {
+        let now = ctx.input(|i| i.time);
+        if response.drag_started() { if let Some(p) = ctx.input(|i| i.pointer.press_origin()) { self.touch_start = Some((p, now)); } }
+        if response.drag_stopped() {
+            if let (Some((start, _)), Some(end)) = (self.touch_start.take(), ctx.input(|i| i.pointer.interact_pos())) {
+                let delta = end - start;
+                if delta.length() > 55.0 {
+                    let key = if delta.x.abs() > delta.y.abs() { if delta.x > 0.0 { "gesture-right" } else { "gesture-left" } } else if delta.y > 0.0 { "gesture-down" } else { "gesture-up" };
+                    let action = self.settings.value(key).to_owned(); self.perform_gesture(&action, ctx);
+                }
+            }
+        }
+        if response.long_touched() {
+            let action = self.settings.value("gesture-long-press").to_owned(); self.perform_gesture(&action, ctx);
+        }
+        if response.clicked() {
+            if self.settings.enabled("history-onclick") { self.show_all_apps = false; self.update_results(); }
+            if self.settings.enabled("double-tap") {
+                let pos = ctx.input(|i| i.pointer.interact_pos()).unwrap_or(response.rect.center());
+                if let Some((last, time)) = self.last_empty_tap {
+                    if now - time < 0.35 && last.distance(pos) < 30.0 { self.set_status("Double-tap lock requires Android accessibility permission"); self.last_empty_tap = None; return; }
+                }
+                self.last_empty_tap = Some((pos, now));
+            }
+        }
+    }
+
+    fn apply_visuals(&self, ctx: &egui::Context, p: Palette) {
+        let mut visuals = if self.settings.value("theme") == "light" { egui::Visuals::light() } else { egui::Visuals::dark() };
+        visuals.override_text_color = Some(p.text); visuals.panel_fill = p.bg; visuals.window_fill = p.surface;
+        visuals.widgets.inactive.bg_fill = p.surface; visuals.widgets.hovered.bg_fill = p.hover;
+        visuals.widgets.active.bg_fill = p.accent; visuals.selection.bg_fill = p.accent;
+        ctx.set_visuals(visuals);
+        let mut style = (*ctx.style()).clone();
+        style.spacing.interact_size.y = 44.0;
+        style.spacing.button_padding = Vec2::new(14.0, 10.0);
+        ctx.set_style(style);
+    }
+
+    fn show_launcher(&mut self, ctx: &egui::Context, p: Palette) {
+        // A background-only target gives KISS-like swipes without stealing taps from results.
+        let bg = egui::Area::new(egui::Id::new("gesture-background")).order(egui::Order::Background).fixed_pos(egui::Pos2::ZERO).show(ctx, |ui| {
+            let rect = ctx.content_rect(); ui.allocate_rect(rect, Sense::click_and_drag())
+        });
+        self.handle_empty_area_gestures(&bg.inner, ctx);
+
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(p.bg).inner_margin(egui::Margin::same(10))).show(ctx, |ui| {
+            let bottom_height = if self.settings.enabled("large-search-bar") { 92.0 } else { 72.0 };
+            let favorites_height = if self.settings.enabled("enable-favorites-bar") && !self.settings.enabled("favorites-hide") { if self.settings.enabled("large-favorites-bar") { 74.0 } else { 58.0 } } else { 0.0 };
+            let results_height = (ui.available_height() - bottom_height - favorites_height).max(40.0);
+            ui.allocate_ui(Vec2::new(ui.available_width(), results_height), |ui| {
+                egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| self.show_results(ui, p));
             });
-        }
+            if favorites_height > 0.0 { ui.allocate_ui(Vec2::new(ui.available_width(), favorites_height), |ui| self.show_favorites(ui, p)); }
+            ui.allocate_ui(Vec2::new(ui.available_width(), bottom_height), |ui| self.show_search_bar(ui, p));
+        });
     }
 
-    fn set_status(&mut self, msg: String) {
-        self.status_message = Some((msg, std::time::Instant::now()));
+    fn show_favorites(&mut self, ui: &mut egui::Ui, p: Palette) {
+        let favorites: Vec<AppEntry> = self.apps.iter().filter(|a| a.is_favorite).cloned().collect();
+        if favorites.is_empty() { return; }
+        egui::ScrollArea::horizontal().show(ui, |ui| ui.horizontal(|ui| {
+            for app in favorites {
+                let initial = app.name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                let button = egui::Button::new(RichText::new(initial).size(if self.settings.enabled("large-favorites-bar") { 22.0 } else { 18.0 }).color(p.text))
+                    .fill(if self.settings.enabled("transparent-favorites") { Color32::TRANSPARENT } else { p.surface })
+                    .corner_radius(CornerRadius::same(22)).min_size(Vec2::splat(44.0));
+                if ui.add(button).on_hover_text(&app.name).clicked() { self.launch_exec(&app.exec); }
+            }
+        }));
     }
 
-    fn get_category_icon(category: &str) -> &str {
-        match category.to_lowercase().as_str() {
-            "game" | "games" => "🎮",
-            "development" => "💻",
-            "education" => "📚",
-            "graphics" => "🎨",
-            "audio" | "audiovideo" | "music" => "🎵",
-            "video" => "🎬",
-            "network" | "internet" => "🌐",
-            "office" => "📄",
-            "settings" | "system" => "⚙️",
-            "utility" | "utilities" => "🔧",
-            "accessories" => "📎",
-            "science" => "🔬",
-            "filemanager" => "📁",
-            _ => "📦",
+    fn show_results(&mut self, ui: &mut egui::Ui, p: Palette) {
+        if let Some(value) = search::try_calculate(&self.query) {
+            egui::Frame::NONE.fill(p.surface).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(14)).show(ui, |ui| {
+                ui.label(RichText::new(value).size(24.0).color(p.accent));
+            }); ui.add_space(6.0);
         }
+        if self.results.is_empty() {
+            ui.vertical_centered(|ui| { ui.add_space(32.0); ui.label(RichText::new(if self.query.is_empty() { "Swipe up for all apps".to_owned() } else { format!("No result for “{}”", self.query) }).color(p.dim)); });
+            return;
+        }
+        let results = self.results.clone();
+        for (index, result) in results.iter().enumerate() { self.show_result(ui, index, result, p); }
     }
 
-    fn get_app_icon(entry: &AppEntry) -> String {
-        // Use category icon or a generic one
-        if let Some(cat) = entry.categories.first() {
-            Self::get_category_icon(cat).to_string()
-        } else if entry.name.to_lowercase().contains("terminal") {
-            "⌨️".to_string()
-        } else if entry.name.to_lowercase().contains("browser")
-            || entry.name.to_lowercase().contains("firefox")
-            || entry.name.to_lowercase().contains("chrome")
-        {
-            "🌐".to_string()
-        } else if entry.name.to_lowercase().contains("file") {
-            "📁".to_string()
-        } else if entry.name.to_lowercase().contains("text")
-            || entry.name.to_lowercase().contains("editor")
-        {
-            "📝".to_string()
-        } else if entry.name.to_lowercase().contains("calc") {
-            "🧮".to_string()
-        } else if entry.name.to_lowercase().contains("mail")
-            || entry.name.to_lowercase().contains("thunder")
-        {
-            "✉️".to_string()
-        } else if entry.name.to_lowercase().contains("music")
-            || entry.name.to_lowercase().contains("spotify")
-        {
-            "🎵".to_string()
-        } else {
-            // First letter of the name
-            entry
-                .name
-                .chars()
-                .next()
-                .unwrap_or('?')
-                .to_uppercase()
-                .to_string()
+    fn show_result(&mut self, ui: &mut egui::Ui, index: usize, result: &SearchResult, p: Palette) {
+        let rounded = if self.settings.enabled("pref-rounded-list") { 14 } else { 5 };
+        let selected = index == self.selected_index;
+        let height = match self.settings.value("results-size") { "small" => 48.0, "large" => 76.0, _ => 60.0 };
+        let frame = egui::Frame::NONE.fill(if selected { p.hover } else { Color32::TRANSPARENT }).corner_radius(CornerRadius::same(rounded))
+            .inner_margin(egui::Margin::symmetric(if self.settings.enabled("large-result-list-margins") { 18 } else { 10 }, 6))
+            .stroke(if selected { Stroke::new(1.0, p.accent) } else { Stroke::NONE });
+        let shown = frame.show(ui, |ui| {
+            ui.set_min_height(height - 12.0);
+            ui.horizontal(|ui| {
+                if !self.settings.enabled("icons-hide") {
+                    let initial = result.entry.name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 19.0, if result.entry.is_favorite { p.accent } else { p.surface });
+                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, initial, FontId::proportional(18.0), if result.entry.is_favorite { p.bg } else { p.text });
+                }
+                ui.add_space(5.0);
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(&result.entry.name).size(16.0).color(if result.match_type == MatchType::Exact && !self.query.is_empty() { p.accent } else { p.text }));
+                    if self.settings.enabled("subicon-visible") && !result.entry.comment.is_empty() { ui.label(RichText::new(&result.entry.comment).size(11.0).color(p.dim)); }
+                    if self.settings.enabled("tags-visible") && !result.entry.tags.is_empty() { ui.label(RichText::new(result.entry.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join("  ")).size(10.0).color(p.accent)); }
+                });
+            });
+        });
+        let response = shown.response.interact(Sense::click());
+        if response.clicked() { self.selected_index = index; self.launch_result(index); }
+        if response.hovered() { self.selected_index = index; }
+        let mut toggle = false; let mut edit = false; let mut launch = false;
+        if response.long_touched() {
+            egui::Popup::open_id(&response.ctx, egui::Popup::default_response_id(&response));
         }
+        response.context_menu(|ui| {
+            ui.set_min_width(190.0);
+            ui.label(RichText::new(&result.entry.name).strong()); ui.separator();
+            if ui.button("Open").clicked() { launch = true; ui.close(); }
+            if ui.button(if result.entry.is_favorite { "Remove from favorites" } else { "Add to favorites" }).clicked() { toggle = true; ui.close(); }
+            if ui.button("Edit tags").clicked() { edit = true; ui.close(); }
+            ui.label(RichText::new("Long-press any app for actions").small().color(p.dim));
+        });
+        if launch { self.launch_result(index); }
+        if toggle { self.toggle_favorite_exec(&result.entry.exec); }
+        if edit { self.editing_tags = Some(result.entry.exec.clone()); self.tag_input = result.entry.tags.join(", "); }
+        if self.editing_tags.as_deref() == Some(result.entry.exec.as_str()) { self.show_tag_editor(ui, &result.entry.exec, p); }
+        ui.add_space(2.0);
+    }
+
+    fn show_tag_editor(&mut self, ui: &mut egui::Ui, exec: &str, p: Palette) {
+        egui::Frame::NONE.fill(p.surface).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(8)).show(ui, |ui| ui.horizontal(|ui| {
+            let response = ui.add(egui::TextEdit::singleline(&mut self.tag_input).hint_text("comma-separated tags").desired_width(ui.available_width() - 70.0));
+            if ui.button("Save").clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                let tags = self.tag_input.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect();
+                self.history.set_tags(exec, tags); self.history.save(); self.editing_tags = None; self.reload_apps();
+            }
+        }));
+    }
+
+    fn show_search_bar(&mut self, ui: &mut egui::Ui, p: Palette) {
+        let rounded = if self.settings.enabled("pref-rounded-bars") { 24 } else { 5 };
+        let transparent = self.settings.enabled("transparent-search");
+        egui::Frame::NONE.fill(if transparent { Color32::TRANSPARENT } else { p.surface }).corner_radius(CornerRadius::same(rounded))
+            .stroke(Stroke::new(1.0, p.border)).inner_margin(egui::Margin::symmetric(8, 5)).show(ui, |ui| ui.horizontal(|ui| {
+                let swap = self.settings.enabled("pref-swap-kiss-button-with-menu");
+                let left_icon = if swap { "⋮" } else { "⌁" };
+                if ui.add(egui::Button::new(RichText::new(left_icon).size(24.0)).frame(false).min_size(Vec2::splat(44.0))).on_hover_text(if swap { "Settings" } else { "All apps" }).clicked() {
+                    if swap { self.screen = Screen::Settings; } else { self.show_all_apps = !self.show_all_apps; self.update_results(); }
+                }
+                let hint = if self.settings.enabled("pref-hide-search-bar-hint") { "" } else { "Search…" };
+                let response = ui.add(egui::TextEdit::singleline(&mut self.query).id(egui::Id::new("riss-search")).hint_text(hint).font(FontId::proportional(17.0)).desired_width(ui.available_width() - 52.0).frame(false));
+                if response.changed() { self.show_all_apps = false; self.update_results(); }
+                let icon = if self.query.is_empty() { if swap { "⌁" } else { "⋮" } } else { "×" };
+                if ui.add(egui::Button::new(RichText::new(icon).size(22.0)).frame(false).min_size(Vec2::splat(44.0))).clicked() {
+                    if !self.query.is_empty() { self.query.clear(); self.update_results(); }
+                    else if swap { self.show_all_apps = !self.show_all_apps; self.update_results(); }
+                    else { self.screen = Screen::Settings; }
+                }
+            }));
+        if let Some((message, _)) = &self.status_message { ui.label(RichText::new(message).size(11.0).color(p.dim)); }
+    }
+
+    fn show_settings(&mut self, ctx: &egui::Context, p: Palette) {
+        egui::TopBottomPanel::top("settings-header").frame(egui::Frame::NONE.fill(p.bg).inner_margin(egui::Margin::same(10))).show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new("‹").frame(false).min_size(Vec2::splat(44.0))).clicked() { self.screen = Screen::Launcher; self.reload_apps(); }
+                ui.heading("Settings");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { ui.label(RichText::new("KISS-compatible").small().color(p.dim)); });
+            });
+            ui.add(egui::TextEdit::singleline(&mut self.settings_query).hint_text("Search settings").desired_width(f32::INFINITY));
+        });
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(p.bg).inner_margin(egui::Margin::symmetric(12, 4))).show(ctx, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                let needle = self.settings_query.to_lowercase(); let mut section = "";
+                for spec in settings::specs() {
+                    if !needle.is_empty() && !format!("{} {} {}", spec.section, spec.title, spec.key).to_lowercase().contains(&needle) { continue; }
+                    if spec.section != section { section = spec.section; ui.add_space(14.0); ui.label(RichText::new(section.to_uppercase()).size(12.0).strong().color(p.accent)); ui.add_space(3.0); }
+                    let mut changed = false;
+                    egui::Frame::NONE.fill(p.surface).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::symmetric(12, 6)).show(ui, |ui| {
+                        match spec.kind {
+                            SettingKind::Toggle => {
+                                let value = self.settings.bools.entry(spec.key.to_owned()).or_insert(false);
+                                if ui.checkbox(value, spec.title).changed() { changed = true; }
+                            }
+                            SettingKind::Choice(options) => ui.horizontal(|ui| {
+                                ui.label(spec.title); ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let value = self.settings.values.entry(spec.key.to_owned()).or_default();
+                                    egui::ComboBox::from_id_salt(spec.key).selected_text(value.as_str()).width(140.0).show_ui(ui, |ui| {
+                                        for option in options { if ui.selectable_value(value, (*option).to_owned(), *option).changed() { changed = true; } }
+                                    });
+                                });
+                            }),
+                            SettingKind::Number { min, max } => ui.horizontal(|ui| {
+                                ui.label(spec.title); ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let value = self.settings.values.entry(spec.key.to_owned()).or_default();
+                                    let mut number = value.parse::<usize>().unwrap_or(min).clamp(min, max);
+                                    if ui.add(egui::DragValue::new(&mut number).range(min..=max)).changed() { *value = number.to_string(); changed = true; }
+                                });
+                            }),
+                            SettingKind::Text => {
+                                ui.label(spec.title); let value = self.settings.values.entry(spec.key.to_owned()).or_default();
+                                if ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY).hint_text(spec.summary)).changed() { changed = true; }
+                            }
+                            SettingKind::Action => { if ui.add_sized([ui.available_width(), 42.0], egui::Button::new(spec.title)).clicked() { self.run_setting_action(spec.key); } }
+                        }
+                    });
+                    if changed { self.settings.save(); self.update_results(); }
+                    ui.add_space(3.0);
+                }
+                ui.add_space(30.0);
+            });
+        });
+    }
+
+    fn run_setting_action(&mut self, key: &str) {
+        match key {
+            "reset-history" => { self.history.launch_counts.clear(); self.history.last_launched.clear(); self.history.save(); self.reload_apps(); self.set_status("History cleared"); }
+            "reset-favorites" => { self.history.favorites.clear(); self.history.save(); self.reload_apps(); self.set_status("Favorites cleared"); }
+            "reset-excluded-apps" => { self.settings.values.insert("edit-excluded-apps".into(), String::new()); self.settings.save(); }
+            "reset-excluded-from-history-apps" => { self.settings.values.insert("edit-excluded-from-history-apps".into(), String::new()); self.settings.save(); }
+            "reset-excluded-app-shortcuts" => { self.settings.values.insert("edit-excluded-app-shortcuts".into(), String::new()); self.settings.save(); }
+            "reset-all" => { self.settings.reset(); self.reload_apps(); self.set_status("Settings reset"); }
+            "restart" => self.set_status("Settings applied — restart is not required"),
+            "export-settings" => self.set_status("Settings are stored in settings.json"),
+            "import-settings" => self.set_status("Replace settings.json, then restart RISS"),
+            "default-launcher" => self.set_status("Choose RISS in your system’s default apps"),
+            "rate-app" => self.set_status("Thank you for using RISS"),
+            "reset-shortcuts" | "reset-search-providers" => self.set_status("Provider data reset"),
+            _ => self.set_status("Action completed"),
+        }
+    }
+}
+
+impl eframe::App for RissApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let p = Palette::from_settings(&self.settings); self.apply_visuals(ctx, p); self.handle_keys(ctx);
+        if self.status_message.as_ref().is_some_and(|(_, at)| at.elapsed() > Duration::from_secs(3)) { self.status_message = None; }
+        match self.screen { Screen::Launcher => self.show_launcher(ctx, p), Screen::Settings => self.show_settings(ctx, p) }
+        if self.status_message.is_some() { ctx.request_repaint_after(Duration::from_millis(250)); }
     }
 }
 
 pub fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-
     #[cfg(not(target_os = "android"))]
-    {
-        // Try to load DejaVu Sans from system fonts on Linux
-        let font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        ];
-
-        for path in &font_paths {
-            if let Ok(data) = std::fs::read(path) {
-                fonts.font_data.insert(
-                    "system_font".to_owned(),
-                    egui::FontData::from_owned(data).into(),
-                );
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Proportional)
-                    .or_default()
-                    .insert(0, "system_font".to_owned());
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Monospace)
-                    .or_default()
-                    .insert(0, "system_font".to_owned());
-                break;
-            }
-        }
-    }
-
+    let paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"];
     #[cfg(target_os = "android")]
-    {
-        // On Android, try to load Roboto from system fonts
-        let android_font_paths = [
-            "/system/fonts/Roboto-Regular.ttf",
-            "/system/fonts/NotoSans-Regular.ttf",
-            "/system/fonts/DroidSans.ttf",
-        ];
-
-        for path in &android_font_paths {
-            if let Ok(data) = std::fs::read(path) {
-                fonts.font_data.insert(
-                    "system_font".to_owned(),
-                    egui::FontData::from_owned(data).into(),
-                );
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Proportional)
-                    .or_default()
-                    .insert(0, "system_font".to_owned());
-                fonts
-                    .families
-                    .entry(egui::FontFamily::Monospace)
-                    .or_default()
-                    .insert(0, "system_font".to_owned());
-                break;
-            }
+    let paths = ["/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf", "/system/fonts/DroidSans.ttf"];
+    for path in paths {
+        if let Ok(data) = std::fs::read(path) {
+            fonts.font_data.insert("system".into(), egui::FontData::from_owned(data).into());
+            fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "system".into()); break;
         }
     }
-
-    // Ignore font errors silently - fall back to default fonts
     ctx.set_fonts(fonts);
-}
-
-impl eframe::App for RissApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Apply dark theme
-        let mut visuals = egui::Visuals::dark();
-        visuals.override_text_color = Some(Colors::TEXT);
-        visuals.window_fill = Colors::BG;
-        visuals.panel_fill = Colors::BG;
-        visuals.widgets.noninteractive.bg_fill = Colors::BG_LIGHT;
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, Colors::TEXT);
-        visuals.widgets.inactive.bg_fill = Colors::SEARCH_BG;
-        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, Colors::TEXT);
-        visuals.widgets.hovered.bg_fill = Colors::BG_HOVER;
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, Colors::TEXT);
-        visuals.widgets.active.bg_fill = Colors::ACCENT_DIM;
-        visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Colors::TEXT);
-        visuals.selection.bg_fill = Colors::ACCENT_DIM;
-        ctx.set_visuals(visuals);
-
-        // Handle keyboard shortcuts
-        self.handle_keyboard(ctx);
-
-        // Clear stale status messages (after 3 seconds)
-        if let Some((_, time)) = &self.status_message {
-            if time.elapsed().as_secs() > 3 {
-                self.status_message = None;
-            }
-        }
-
-        // Main layout: Top area with results, bottom area with search bar (RISS style)
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
-            .show(ctx, |ui| {
-                // Top: Header with branding
-                ui.allocate_ui(Vec2::new(ui.available_width(), 40.0), |ui| {
-                    ui.horizontal_centered(|ui| {
-                        ui.add_space(12.0);
-                        ui.label(
-                            RichText::new("⚡ RISS")
-                                .color(Colors::ACCENT)
-                                .font(FontId::proportional(18.0))
-                                .strong(),
-                        );
-                        ui.label(
-                            RichText::new("Launcher")
-                                .color(Colors::TEXT_DIM)
-                                .font(FontId::proportional(18.0)),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(12.0);
-                            if ui
-                                .add(
-                                    egui::Label::new(
-                                        RichText::new("🔄")
-                                            .font(FontId::proportional(16.0))
-                                            .color(Colors::TEXT_DIM),
-                                    )
-                                    .sense(egui::Sense::click()),
-                                )
-                                .clicked()
-                            {
-                                self.history = HistoryData::load();
-                                self.apps = app_entry::discover_apps();
-                                for app in &mut self.apps {
-                                    app.launch_count = self.history.get_launch_count(&app.exec);
-                                    app.last_launched = self.history.get_last_launched(&app.exec);
-                                    app.is_favorite = self.history.is_favorite(&app.exec);
-                                    app.tags = history::get_tags_safe(&self.history, &app.exec);
-                                }
-                                self.update_results();
-                                self.set_status("Apps refreshed".to_string());
-                            }
-                            ui.label(
-                                RichText::new(format!("{} apps", self.apps.len()))
-                                    .color(Colors::TEXT_DIM)
-                                    .font(FontId::proportional(12.0)),
-                            );
-                        });
-                    });
-                });
-
-                // Middle: Results area
-                let available_height = ui.available_height() - 120.0; // Reserve space for search bar
-                egui::ScrollArea::vertical()
-                    .max_height(available_height)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        self.show_results(ui);
-                    });
-
-                // Bottom: Search bar (RISS style - at the bottom)
-                ui.allocate_ui(Vec2::new(ui.available_width(), 120.0), |ui| {
-                    ui.add_space(8.0);
-                    self.show_search_bar(ui, ctx);
-
-                    // Status message
-                    if let Some((msg, _)) = &self.status_message {
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.add_space(12.0);
-                            ui.label(
-                                RichText::new(msg)
-                                    .color(Colors::TEXT_DIM)
-                                    .font(FontId::proportional(11.0)),
-                            );
-                        });
-                    }
-                });
-            });
-    }
-}
-
-impl RissApp {
-    fn handle_keyboard(&mut self, ctx: &egui::Context) {
-        // Handle keyboard input
-        let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-        let up_pressed = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
-        let down_pressed = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
-        let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-        let tab_pressed = ctx.input(|i| i.key_pressed(egui::Key::Tab));
-
-        if enter_pressed && !self.results.is_empty() {
-            self.launch_app(self.selected_index);
-        }
-
-        if up_pressed && self.selected_index > 0 {
-            self.selected_index -= 1;
-        }
-
-        if down_pressed && !self.results.is_empty() {
-            self.selected_index = (self.selected_index + 1).min(self.results.len() - 1);
-        }
-
-        if escape_pressed && !self.query.is_empty() {
-            self.query.clear();
-            self.update_results();
-        }
-
-        if tab_pressed && !self.results.is_empty() {
-            // Tab cycles through results
-            self.selected_index = (self.selected_index + 1) % self.results.len();
-        }
-    }
-
-    fn show_results(&mut self, ui: &mut egui::Ui) {
-        // Show calculator result if applicable
-        if !self.query.is_empty() {
-            if let Some(calc_result) = search::try_calculate(&self.query) {
-                let frame = egui::Frame::NONE
-                    .fill(Colors::CALC_BG)
-                    .corner_radius(CornerRadius::same(8))
-                    .inner_margin(egui::Margin::symmetric(12, 8));
-
-                frame.show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("🧮").font(FontId::proportional(20.0)));
-                        ui.add_space(8.0);
-                        ui.label(
-                            RichText::new(&self.query)
-                                .color(Colors::TEXT_DIM)
-                                .font(FontId::proportional(14.0)),
-                        );
-                        ui.label(
-                            RichText::new(&calc_result)
-                                .color(Colors::CALC_TEXT)
-                                .font(FontId::proportional(18.0))
-                                .strong(),
-                        );
-                    });
-                });
-                ui.add_space(8.0);
-            }
-        }
-
-        if self.results.is_empty() {
-            ui.add_space(40.0);
-            ui.centered_and_justified(|ui| {
-                if self.query.is_empty() {
-                    ui.label(
-                        RichText::new("Type to search apps...\n\nFavorites and frequently used apps will appear here.")
-                            .color(Colors::TEXT_DIM)
-                            .font(FontId::proportional(14.0)),
-                    );
-                } else {
-                    ui.label(
-                        RichText::new(format!("No results for \"{}\"", self.query))
-                            .color(Colors::TEXT_DIM)
-                            .font(FontId::proportional(14.0)),
-                    );
-                }
-            });
-            return;
-        }
-
-        // Show section headers
-        let show_favorites_header =
-            self.query.is_empty() && self.results.iter().any(|r| r.entry.is_favorite);
-        let show_frequent_header = self.query.is_empty()
-            && self
-                .results
-                .iter()
-                .any(|r| !r.entry.is_favorite && r.entry.launch_count > 0);
-
-        let mut shown_favorites = false;
-        let mut shown_frequent = false;
-
-        // Use index-based loop to avoid borrow conflicts
-        let result_count = self.results.len();
-        for index in 0..result_count {
-            // Check section headers
-            let is_favorite = self.results[index].entry.is_favorite;
-            let launch_count = self.results[index].entry.launch_count;
-
-            // Section headers for default view
-            if self.query.is_empty() {
-                if is_favorite && !shown_favorites && show_favorites_header {
-                    shown_favorites = true;
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("⭐ FAVORITES")
-                            .color(Colors::TEXT_DIM)
-                            .font(FontId::proportional(11.0))
-                            .strong(),
-                    );
-                    ui.add_space(4.0);
-                } else if !is_favorite
-                    && launch_count > 0
-                    && !shown_frequent
-                    && show_frequent_header
-                {
-                    shown_frequent = true;
-                    ui.add_space(8.0);
-                    ui.label(
-                        RichText::new("📊 FREQUENTLY USED")
-                            .color(Colors::TEXT_DIM)
-                            .font(FontId::proportional(11.0))
-                            .strong(),
-                    );
-                    ui.add_space(4.0);
-                }
-            }
-
-            // Clone the result to avoid borrow conflicts
-            let result = self.results[index].clone();
-            self.show_result_item(ui, index, &result);
-        }
-    }
-
-    fn show_result_item(&mut self, ui: &mut egui::Ui, index: usize, result: &SearchResult) {
-        let is_selected = index == self.selected_index;
-
-        let bg_color = if is_selected {
-            Colors::BG_HOVER
-        } else {
-            Colors::BG
-        };
-
-        let frame = egui::Frame::NONE
-            .fill(bg_color)
-            .corner_radius(CornerRadius::same(8))
-            .inner_margin(egui::Margin::symmetric(12, 8))
-            .stroke(if is_selected {
-                Stroke::new(1.0_f32, Colors::ACCENT_DIM)
-            } else {
-                Stroke::NONE
-            });
-
-        let response = frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // App icon
-                let icon_text = Self::get_app_icon(&result.entry);
-                let icon_label =
-                    ui.label(RichText::new(&icon_text).font(FontId::proportional(24.0)));
-                let _ = icon_label;
-
-                ui.add_space(8.0);
-
-                // App info
-                ui.vertical(|ui| {
-                    // App name with match highlight
-                    let name_color = if result.entry.is_favorite {
-                        Colors::FAVORITE
-                    } else if result.match_type == MatchType::Exact {
-                        Colors::ACCENT
-                    } else {
-                        Colors::TEXT
-                    };
-
-                    ui.label(
-                        RichText::new(&result.entry.name)
-                            .color(name_color)
-                            .font(FontId::proportional(15.0))
-                            .strong(),
-                    );
-
-                    // Comment/description
-                    if !result.entry.comment.is_empty() {
-                        ui.label(
-                            RichText::new(&result.entry.comment)
-                                .color(Colors::TEXT_DIM)
-                                .font(FontId::proportional(11.0)),
-                        );
-                    } else if !result.entry.categories.is_empty() {
-                        ui.label(
-                            RichText::new(result.entry.categories.join(" • "))
-                                .color(Colors::TEXT_DIM)
-                                .font(FontId::proportional(11.0)),
-                        );
-                    }
-
-                    // Tags
-                    if !result.entry.tags.is_empty() {
-                        ui.horizontal(|ui| {
-                            for tag in &result.entry.tags {
-                                let tag_frame = egui::Frame::NONE
-                                    .fill(Colors::BG_LIGHT)
-                                    .corner_radius(CornerRadius::same(4))
-                                    .inner_margin(egui::Margin::symmetric(4, 1));
-                                tag_frame.show(ui, |ui| {
-                                    ui.label(
-                                        RichText::new(format!("#{}", tag))
-                                            .color(Colors::ACCENT_DIM)
-                                            .font(FontId::proportional(9.0)),
-                                    );
-                                });
-                            }
-                        });
-                    }
-                });
-
-                // Right side: launch count + favorite button
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Favorite button
-                    let fav_text = if result.entry.is_favorite {
-                        "★"
-                    } else {
-                        "☆"
-                    };
-                    let fav_color = if result.entry.is_favorite {
-                        Colors::FAVORITE
-                    } else {
-                        Colors::TEXT_DIM
-                    };
-                    let fav_btn = ui.add(
-                        egui::Label::new(
-                            RichText::new(fav_text)
-                                .font(FontId::proportional(20.0))
-                                .color(fav_color),
-                        )
-                        .sense(egui::Sense::click()),
-                    );
-                    if fav_btn.clicked() {
-                        self.toggle_favorite(index);
-                    }
-
-                    // Launch count
-                    if result.entry.launch_count > 0 {
-                        ui.label(
-                            RichText::new(format!("×{}", result.entry.launch_count))
-                                .color(Colors::TEXT_DIM)
-                                .font(FontId::proportional(11.0)),
-                        );
-                    }
-
-                    // Tag edit button
-                    let tag_btn = ui.add(
-                        egui::Label::new(
-                            RichText::new("🏷️")
-                                .font(FontId::proportional(14.0))
-                                .color(Colors::TEXT_DIM),
-                        )
-                        .sense(egui::Sense::click()),
-                    );
-                    if tag_btn.clicked() {
-                        if self.editing_tags.as_deref() == Some(&result.entry.exec) {
-                            self.editing_tags = None;
-                        } else {
-                            self.editing_tags = Some(result.entry.exec.clone());
-                            self.tag_input = result.entry.tags.join(", ");
-                        }
-                    }
-                });
-            });
-        });
-
-        // Tag editing popup
-        if self.editing_tags.as_deref() == Some(&result.entry.exec) {
-            let exec = result.entry.exec.clone();
-            let frame = egui::Frame::NONE
-                .fill(Colors::BG_LIGHT)
-                .corner_radius(CornerRadius::same(6))
-                .inner_margin(egui::Margin::same(8))
-                .stroke(Stroke::new(1.0_f32, Colors::BORDER));
-            frame.show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Tags:")
-                            .color(Colors::TEXT_DIM)
-                            .font(FontId::proportional(11.0)),
-                    );
-                    let te = ui.add(
-                        egui::TextEdit::singleline(&mut self.tag_input)
-                            .desired_width(200.0)
-                            .hint_text("tag1, tag2, ...")
-                            .font(FontId::proportional(12.0)),
-                    );
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("Save")
-                                    .font(FontId::proportional(11.0))
-                                    .color(Colors::TEXT),
-                            )
-                            .fill(Colors::ACCENT_DIM)
-                            .corner_radius(CornerRadius::same(4)),
-                        )
-                        .clicked()
-                        || te.lost_focus()
-                    {
-                        let tags: Vec<String> = self
-                            .tag_input
-                            .split(',')
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect();
-                        self.history.set_tags(&exec, tags.clone());
-                        for app in &mut self.apps {
-                            if app.exec == exec {
-                                app.tags = tags.clone();
-                            }
-                        }
-                        self.history.save();
-                        self.editing_tags = None;
-                        self.update_results();
-                    }
-                });
-            });
-        }
-
-        // Click to launch
-        if response.response.clicked() {
-            self.launch_app(index);
-        }
-
-        // Hover to select
-        if response.response.hovered() {
-            self.selected_index = index;
-        }
-
-        ui.add_space(2.0);
-    }
-
-    fn show_search_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let frame = egui::Frame::NONE
-            .fill(Colors::SEARCH_BG)
-            .corner_radius(CornerRadius::same(12))
-            .inner_margin(egui::Margin::same(12))
-            .stroke(Stroke::new(1.0_f32, Colors::BORDER));
-
-        frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // Search icon
-                ui.label(RichText::new("🔍").font(FontId::proportional(18.0)));
-                ui.add_space(4.0);
-
-                // Search input
-                let search_response = ui.add(
-                    egui::TextEdit::singleline(&mut self.query)
-                        .desired_width(ui.available_width() - 60.0)
-                        .hint_text("Search apps, calculate, or type a command...")
-                        .font(FontId::proportional(16.0))
-                        .text_color(Colors::TEXT),
-                );
-
-                if search_response.changed() {
-                    self.update_results();
-                }
-
-                // Auto-focus
-                if !search_response.has_focus() {
-                    search_response.request_focus();
-                }
-
-                // Clear button
-                if !self.query.is_empty()
-                    && ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("✕")
-                                    .font(FontId::proportional(14.0))
-                                    .color(Colors::TEXT_DIM),
-                            )
-                            .fill(Color32::TRANSPARENT),
-                        )
-                        .clicked()
-                {
-                    self.query.clear();
-                    self.update_results();
-                }
-            });
-
-            // Show keyboard hints
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("↑↓")
-                        .color(Colors::ACCENT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.label(
-                    RichText::new("navigate")
-                        .color(Colors::TEXT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new("↵")
-                        .color(Colors::ACCENT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.label(
-                    RichText::new("launch")
-                        .color(Colors::TEXT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new("Esc")
-                        .color(Colors::ACCENT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.label(
-                    RichText::new("clear")
-                        .color(Colors::TEXT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new("Tab")
-                        .color(Colors::ACCENT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-                ui.label(
-                    RichText::new("cycle")
-                        .color(Colors::TEXT_DIM)
-                        .font(FontId::proportional(10.0)),
-                );
-            });
-        });
-
-        // Request repaint for animations
-        if self.status_message.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_secs(1));
-        }
-    }
-}
-
-/// Helper to avoid borrow issues
-mod history {
-    use crate::history::HistoryData;
-    pub fn get_tags_safe(history: &HistoryData, exec: &str) -> Vec<String> {
-        history.get_tags(exec)
-    }
 }
