@@ -369,8 +369,10 @@ pub fn legacy_fuzzy_score(candidate: &str, query: &str) -> Option<i64> {
 
 // --- Synthetic results used by the optional providers ---------------------
 
-pub fn web_search_result(provider: &str, query: &str) -> SearchResult {
-    let url = crate::providers::provider_url(&provider_url_template(provider), query);
+/// A web search result for `query`, using `template` as the URL of the
+/// provider (`{}` or `%s` is replaced by the encoded query).
+pub fn web_search_result(provider: &str, template: &str, query: &str) -> SearchResult {
+    let url = crate::providers::provider_url(template, query);
     SearchResult {
         entry: AppEntry::virtual_entry(&format!("“{}”", query), provider, &url),
         score: 400,
@@ -450,14 +452,6 @@ pub fn excluded_result(app: &AppEntry) -> SearchResult {
             exec: app.exec.clone(),
         },
     }
-}
-
-fn provider_url_template(provider: &str) -> String {
-    crate::providers::builtin_web_providers()
-        .into_iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(provider))
-        .map(|(_, url)| url.to_string())
-        .unwrap_or_else(|| "https://duckduckgo.com/?q={}".to_string())
 }
 
 /// Try to evaluate a mathematical expression
