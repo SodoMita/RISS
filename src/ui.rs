@@ -647,13 +647,13 @@ impl eframe::App for RissApp {
         visuals.window_fill = self.colors.bg_light;
         visuals.panel_fill = self.colors.bg;
         visuals.widgets.noninteractive.bg_fill = self.colors.bg_light;
-        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, self.colors.text);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, self.colors.text);
         visuals.widgets.inactive.bg_fill = self.colors.search_bg;
-        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, self.colors.text);
+        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, self.colors.text);
         visuals.widgets.hovered.bg_fill = self.colors.bg_hover;
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, self.colors.text);
+        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, self.colors.text);
         visuals.widgets.active.bg_fill = self.colors.accent_dim;
-        visuals.widgets.active.fg_stroke = Stroke::new(1.0, self.colors.text);
+        visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, self.colors.text);
         visuals.selection.bg_fill = self.colors.accent_dim;
         ctx.set_visuals(visuals);
 
@@ -1062,14 +1062,14 @@ impl RissApp {
             ui.painter().rect_stroke(
                 row_rect,
                 row_radius,
-                Stroke::new(1.0, self.colors.accent_dim),
+                Stroke::new(1.0_f32, self.colors.accent_dim),
                 egui::StrokeKind::Inside,
             );
         } else if self.settings.show_separators {
             ui.painter().hline(
                 row_rect.x_range(),
                 row_rect.bottom(),
-                Stroke::new(1.0, self.colors.border),
+                Stroke::new(1.0_f32, self.colors.border),
             );
         }
 
@@ -1283,7 +1283,7 @@ impl RissApp {
             .fill(self.colors.bg_light)
             .corner_radius(CornerRadius::same(10))
             .inner_margin(egui::Margin::symmetric(10, 8))
-            .stroke(Stroke::new(1.0, self.colors.border));
+            .stroke(Stroke::new(1.0_f32, self.colors.border));
         frame.show(ui, |ui| {
             ui.label(
                 RichText::new("Tags · separate with commas")
@@ -1441,7 +1441,7 @@ impl RissApp {
             .fill(fill)
             .corner_radius(CornerRadius::same(14))
             .inner_margin(egui::Margin::symmetric(10, 8))
-            .stroke(Stroke::new(1.0, self.colors.border));
+            .stroke(Stroke::new(1.0_f32, self.colors.border));
 
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
