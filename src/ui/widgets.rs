@@ -108,8 +108,8 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
                 let angle = 0.6 + (i as f32 / 12.0) * 4.6;
                 points.push(center + Vec2::new(angle.cos(), angle.sin()) * (r * 0.78));
             }
-            painter.add(Shape::line(points, stroke));
             let tip = points[12];
+            painter.add(Shape::line(points, stroke));
             painter.add(Shape::convex_polygon(
                 vec![
                     tip + Vec2::new(r * 0.30, 0.0),
@@ -603,7 +603,7 @@ pub fn icon(
 /// A circular badge showing the first letter of an application.
 pub fn app_badge(
     ui: &mut Ui,
-    entry: &AppEntry,
+    _entry: &AppEntry,
     display_name: &str,
     size: f32,
     palette: &Palette,

@@ -120,6 +120,7 @@ pub struct MenuState {
     pub guard_until: Instant,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dialog {
     pub title: String,
     pub message: String,
@@ -2372,7 +2373,7 @@ impl RissApp {
         let palette = self.palette;
         let screen = ctx.screen_rect();
         let width = 190.0;
-        let position = Vec2::new(screen.center().x - width * 0.5, screen.top() + 16.0);
+        let position = egui::Pos2::new(screen.center().x - width * 0.5, screen.top() + 16.0);
         let mut cancel = false;
         egui::Area::new(egui::Id::new("riss_timer"))
             .fixed_pos(position)

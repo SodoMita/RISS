@@ -84,9 +84,9 @@ impl Default for SearchEngine {
 
 impl SearchEngine {
     pub fn new() -> Self {
-        let mut matcher = SkimMatcherV2::default();
-        matcher.smart_case();
-        Self { matcher }
+        Self {
+            matcher: SkimMatcherV2::default().smart_case(),
+        }
     }
 
     /// Search through apps with the given query.
