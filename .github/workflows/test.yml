@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  pull-requests: write
+
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -49,7 +53,16 @@ jobs:
       run: cargo fmt -- --check
     
     - name: Run clippy
-      run: cargo clippy -- -D warnings
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set +e
+        cargo clippy -- -D warnings 2>&1 | tee /tmp/clippy.log
+        STATUS=${PIPESTATUS[0]}
+        if [ "$STATUS" -ne 0 ]; then
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/clippy.log
+          exit "$STATUS"
+        fi
     
     - name: Run tests
       run: cargo test --verbose
