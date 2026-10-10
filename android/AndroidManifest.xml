@@ -23,9 +23,25 @@
         android:label="RISS Launcher"
         android:hasCode="false">
         
+        <!--
+            Theme.Wallpaper is what makes the home-screen wallpaper visible
+            behind the launcher: it sets windowShowWallpaper (PhoneWindow turns
+            that into FLAG_SHOW_WALLPAPER, telling the window manager to draw
+            the wallpaper behind this window), a transparent window background
+            and no background cache hint.
+
+            Note that `android:showWallpaper` is NOT a valid <activity>
+            attribute (it belongs to the WindowAnimation styleable), so the
+            theme is the only way to ask for the wallpaper from the manifest.
+
+            The window still needs an alpha pixel format: NativeActivity would
+            otherwise keep it at RGB_565. See
+            android_jni::make_window_translucent_jni.
+        -->
         <activity
             android:name="android.app.NativeActivity"
             android:label="RISS Launcher"
+            android:theme="@android:style/Theme.Wallpaper.NoTitleBar"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
