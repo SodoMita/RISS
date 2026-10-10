@@ -87,7 +87,7 @@ pub struct RissApp {
     /// "Uninstall" was first pressed. A destructive operation should not
     /// run on a single stray tap.
     pending_uninstall: Option<(String, Instant)>,
-    /// Accumulating wheel fling. Positive increases the scroll offset.
+ /// Accumulating wheel fling. Positive increases the scroll offset.
     fling_velocity: f32,
     /// Arrow keys moved the highlight; reveal that row in the virtual list.
     scroll_selection: bool,
@@ -95,6 +95,8 @@ pub struct RissApp {
     /// tell a nested reload already installed a fresh one.
     list_generation: u64,
     deferred: Vec<Deferred>,
+    first_frame: bool,
+    surrender_search_focus: bool,
 }
 
 impl RissApp {
@@ -144,10 +146,12 @@ impl RissApp {
             osk: osk::OskTracker::new(&cc.egui_ctx),
             window_mode,
             pending_uninstall: None,
-            fling_velocity: 0.0,
+         fling_velocity: 0.0,
             scroll_selection: false,
             list_generation: 0,
             deferred: Vec::new(),
+            first_frame: true,
+            surrender_search_focus: false,
         };
         // egui's native default is 40px per wheel line. The result list adds
         // velocity on top of this; the settings screen just needs to not crawl.
@@ -595,6 +599,9 @@ impl RissApp {
                 self.show_hidden = false;
                 self.reapply_usage();
                 self.set_status(format!("Opened {}", name));
+                if self.settings.enabled("hide-keyboard") {
+                    self.surrender_search_focus = true;
+                }
             }
             Err(error) => self.set_status(error),
         }
@@ -852,6 +859,16 @@ impl eframe::App for RissApp {
         self.apply_visuals(ctx, p);
         self.icons.begin_frame();
         self.handle_keys(ctx);
+        if self.first_frame {
+            self.first_frame = false;
+            if self.settings.enabled("display-keyboard") {
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("riss-search")));
+            }
+        }
+        if self.surrender_search_focus {
+            self.surrender_search_focus = false;
+            ctx.memory_mut(|m| m.surrender_focus(egui::Id::new("riss-search")));
+        }
         if self
             .status_message
             .as_ref()
