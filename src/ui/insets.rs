@@ -264,7 +264,9 @@ impl InsetTracker {
         }
         self.had_keyboard_focus = focused;
         let keyboard_open = self.current.bottom > screen.height() * Self::KEYBOARD_MIN_FRACTION;
-        self.state.keyboard_open.store(keyboard_open, Ordering::Relaxed);
+        self.state
+            .keyboard_open
+            .store(keyboard_open, Ordering::Relaxed);
         self.current
     }
 }
