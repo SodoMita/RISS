@@ -6,7 +6,7 @@ use crate::history::{HistoryData, HistoryMode};
 use crate::search::{self, MatchType, ResultAction, ResultView, SearchEngine, SearchResult};
 use crate::settings::SettingsData;
 use eframe::egui::{self, RichText};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 mod colors;
@@ -23,6 +23,7 @@ pub(crate) mod window_mode;
 
 use colors::Palette;
 use favorites::FavDrag;
+use icons::IconCache;
 use window_mode::WindowMode;
 
 /// How long the Uninstall action waits for its confirmation click before
@@ -47,8 +48,7 @@ pub struct RissApp {
     search_engine: SearchEngine,
     history: HistoryData,
     settings: SettingsData,
-    icon_textures: HashMap<String, egui::TextureHandle>,
-    icons_without_image: HashSet<String>,
+    icons: IconCache,
     selected_index: usize,
     screen: Screen,
     show_all_apps: bool,
@@ -107,8 +107,7 @@ impl RissApp {
             search_engine: SearchEngine::new(),
             history,
             settings,
-            icon_textures: HashMap::new(),
-            icons_without_image: HashSet::new(),
+            icons: IconCache::default(),
             selected_index: 0,
             screen: Screen::Launcher,
             show_all_apps: false,
@@ -807,6 +806,7 @@ impl eframe::App for RissApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let p = Palette::from_settings(&self.settings);
         self.apply_visuals(ctx, p);
+        self.icons.begin_frame();
         self.handle_keys(ctx);
         if self
             .status_message
@@ -844,6 +844,10 @@ impl eframe::App for RissApp {
             Screen::Launcher => self.show_launcher(ctx, p),
             Screen::Settings => self.show_settings(ctx, p),
             Screen::Favorites => self.show_favorites_screen(ctx, p),
+        }
+        // Rows that missed the icon decode budget ask for one more pass.
+        if self.icons.take_pending() {
+            ctx.request_repaint();
         }
         if self.status_message.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
