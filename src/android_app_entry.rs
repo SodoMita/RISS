@@ -98,6 +98,8 @@ impl AppEntry {
             return Err(format!("{} cannot be uninstalled", self.name));
         }
         Ok(format!("Opens Android's uninstaller for {}", self.name))
+    }
+
     pub fn open_app_info(&self) -> Result<(), String> {
         #[cfg(target_os = "android")]
         {

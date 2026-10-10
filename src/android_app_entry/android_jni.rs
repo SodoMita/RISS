@@ -437,12 +437,9 @@ pub fn open_url_jni(url: &str) -> Result<(), String> {
         .new_string(url)
         .map_err(|e| format!("Failed to create url string: {:?}", e))?
         .into();
-    let uri_class = env
-        .find_class("android/net/Uri")
-        .map_err(|e| format!("Uri class not found: {:?}", e))?;
     let uri = env
-        .call_method(
-            &uri_class,
+        .call_static_method(
+            "android/net/Uri",
             "parse",
             "(Ljava/lang/String;)Landroid/net/Uri;",
             &[JValue::Object(&url_string)],
@@ -573,8 +570,9 @@ pub fn make_window_translucent_jni() {
         }
     };
 
+    let app_cb = app.clone();
     app.run_on_java_main_thread(Box::new(move || {
-        let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+        let vm_ptr = app_cb.vm_as_ptr() as *mut JavaVMPtr;
         if vm_ptr.is_null() {
             error!("JavaVM pointer is null; cannot make the window translucent");
             return;
@@ -596,7 +594,7 @@ pub fn make_window_translucent_jni() {
             }
         };
 
-        let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jobject) };
+        let activity = unsafe { JObject::from_raw(app_cb.activity_as_ptr() as jobject) };
         let window = match env
             .call_method(&activity, "getWindow", "()Landroid/view/Window;", &[])
             .and_then(|value| value.l())
@@ -624,6 +622,8 @@ pub fn make_window_translucent_jni() {
         }
         info!("Window format set to TRANSLUCENT: the wallpaper can show through");
     }));
+}
+
 /// Launch the system package uninstaller for an application
 pub fn uninstall_app_jni(package_name: &str) -> Result<(), String> {
     let app_guard = get_android_app().ok_or("AndroidApp not initialized")?;

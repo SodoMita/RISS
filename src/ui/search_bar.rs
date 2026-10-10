@@ -81,7 +81,7 @@ impl RissApp {
                     // search bar is transparent. All-apps mode overrides all
                     // of it with the white-on-accent "kiss bar" palette.
                     let swap = self.settings.enabled("pref-swap-kiss-button-with-menu");
-                    let show_glyph = !self.settings.enabled("pref-hide-circle");
+                    let hide_circle = self.settings.enabled("pref-hide-circle");
                     let kiss_color = if all_apps { Color32::WHITE } else { p.accent };
                     let menu_color = if all_apps {
                         Color32::WHITE
@@ -102,12 +102,13 @@ impl RissApp {
                     } else {
                         menu_color
                     };
+                    let left_show_glyph = left_icon != BarIcon::Kiss || !hide_circle;
                     let left_response = bar_icon_button(
                         ui,
                         left_icon,
                         left_color,
                         left_tooltip,
-                        show_glyph,
+                        left_show_glyph,
                         all_apps,
                     );
                     if left_response.clicked() {
@@ -156,12 +157,13 @@ impl RissApp {
                     } else {
                         menu_color
                     };
+                    let right_show_glyph = right_icon != BarIcon::Kiss || !hide_circle;
                     let right_response = bar_icon_button(
                         ui,
                         right_icon,
                         right_color,
                         right_tooltip,
-                        show_glyph,
+                        right_show_glyph,
                         all_apps,
                     );
                     if right_response.clicked() {
