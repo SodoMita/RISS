@@ -194,7 +194,7 @@ impl RissApp {
                 // Favorites and tags are deliberately preserved.
                 self.history.clear_history();
                 self.save_history();
-                self.reload_apps();
+                self.reapply_usage();
                 self.set_status("History cleared (favorites kept)");
             }
             "manage-favorites" => self.open_favorites_manager(Screen::Settings),

@@ -34,10 +34,18 @@ impl RissApp {
             self.update_results();
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-            self.selected_index = self.selected_index.saturating_sub(1);
+            let next = self.selected_index.saturating_sub(1);
+            if next != self.selected_index {
+                self.selected_index = next;
+                self.scroll_selection = true;
+            }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !self.results.is_empty() {
-            self.selected_index = (self.selected_index + 1).min(self.results.len() - 1);
+            let next = (self.selected_index + 1).min(self.results.len() - 1);
+            if next != self.selected_index {
+                self.selected_index = next;
+                self.scroll_selection = true;
+            }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !self.results.is_empty() {
             self.activate(self.selected_index);
