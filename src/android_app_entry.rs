@@ -21,6 +21,31 @@ pub struct AppEntry {
 }
 
 impl AppEntry {
+    /// A synthetic entry for provider results (web search, timers, settings…)
+    /// that does not correspond to an installed application.
+    pub fn virtual_entry(name: &str, comment: &str, exec: &str) -> Self {
+        AppEntry {
+            name: name.to_string(),
+            comment: comment.to_string(),
+            exec: exec.to_string(),
+            icon: String::new(),
+            categories: Vec::new(),
+            tags: Vec::new(),
+            desktop_file: PathBuf::new(),
+            launch_count: 0,
+            last_launched: 0,
+            is_favorite: false,
+        }
+    }
+
+    /// Is this one of the synthetic entries rather than a real application?
+    ///
+    /// Discovered apps carry an icon name (their package), while
+    /// `virtual_entry` leaves both `desktop_file` and `icon` empty.
+    pub fn is_virtual(&self) -> bool {
+        self.desktop_file.as_os_str().is_empty() && self.icon.is_empty()
+    }
+
     pub fn searchable_text(&self) -> String {
         let mut parts = vec![self.name.clone()];
         if !self.comment.is_empty() {

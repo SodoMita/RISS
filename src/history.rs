@@ -15,7 +15,18 @@ pub struct HistoryData {
     pub favorites: Vec<String>,
     /// Custom tags: exec -> tags
     pub tags: HashMap<String, Vec<String>>,
+    /// Custom display names (KISS' "rename app"): exec -> alias
+    pub aliases: HashMap<String, String>,
+    /// Number shortcuts: "1".."9" -> exec
+    pub shortcuts: HashMap<String, String>,
+    /// Previously typed web searches
+    pub search_history: Vec<String>,
+    /// Previously executed commands
+    pub exec_history: Vec<String>,
 }
+
+/// Maximum number of remembered searches / commands.
+const MAX_HISTORY_ITEMS: usize = 50;
 
 /// How the default (no-query) history list is ordered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,10 +91,11 @@ impl HistoryData {
     }
 
     /// Forget usage statistics for one app (KISS' "reset rank"), keeping
-    /// favorites and tags intact.
+    /// favorites, tags and renames intact.
     pub fn reset_rank(&mut self, exec: &str) {
         self.launch_counts.remove(exec);
         self.last_launched.remove(exec);
+        self.shortcuts.retain(|_, value| value != exec);
     }
 
     /// Clear usage history while preserving favorites and tags.
@@ -124,6 +136,76 @@ impl HistoryData {
         } else {
             self.tags.insert(exec.to_string(), tags);
         }
+    }
+
+    // --- aliases (KISS' "rename app") ------------------------------------
+
+    pub fn alias(&self, exec: &str) -> Option<&String> {
+        self.aliases.get(exec)
+    }
+
+    pub fn set_alias(&mut self, exec: &str, alias: String) {
+        if alias.trim().is_empty() {
+            self.aliases.remove(exec);
+        } else {
+            self.aliases
+                .insert(exec.to_string(), alias.trim().to_string());
+        }
+    }
+
+    // --- numbered shortcuts ----------------------------------------------
+
+    pub fn shortcut_for(&self, key: u8) -> Option<&String> {
+        self.shortcuts.get(&key.to_string())
+    }
+
+    pub fn set_shortcut(&mut self, key: u8, exec: &str) {
+        // A shortcut is unique: steal it from whoever had it.
+        self.shortcuts.retain(|_, value| value != exec);
+        self.shortcuts.insert(key.to_string(), exec.to_string());
+    }
+
+    pub fn clear_shortcut(&mut self, key: u8) {
+        self.shortcuts.remove(&key.to_string());
+    }
+
+    pub fn clear_all_shortcuts(&mut self) {
+        self.shortcuts.clear();
+    }
+
+    /// Lowest free number between 1 and 9.
+    pub fn next_free_shortcut(&self) -> Option<u8> {
+        (1..=9).find(|key| self.shortcut_for(*key).is_none())
+    }
+
+    // --- provider history -------------------------------------------------
+
+    pub fn record_search(&mut self, query: &str) {
+        let query = query.trim().to_string();
+        if query.is_empty() {
+            return;
+        }
+        self.search_history.retain(|item| item != &query);
+        self.search_history.insert(0, query);
+        self.search_history.truncate(MAX_HISTORY_ITEMS);
+    }
+
+    pub fn recent_searches(&self, max: usize) -> Vec<String> {
+        self.search_history.iter().take(max).cloned().collect()
+    }
+
+    pub fn record_exec(&mut self, command: &str) {
+        let command = command.trim().to_string();
+        if command.is_empty() {
+            return;
+        }
+        self.exec_history.retain(|item| item != &command);
+        self.exec_history.insert(0, command);
+        self.exec_history.truncate(MAX_HISTORY_ITEMS);
+    }
+
+    pub fn recent_execs(&self, max: usize) -> Vec<String> {
+        self.exec_history.iter().take(max).cloned().collect()
     }
 
     /// Ordering score for one app under `mode` at time `now`. Higher sorts
@@ -308,5 +390,62 @@ mod tests {
         assert_eq!(parsed.get_last_launched("app"), 123);
         assert!(parsed.favorites.is_empty());
         assert!(parsed.tags.is_empty());
+        assert!(parsed.aliases.is_empty());
+        assert!(parsed.shortcuts.is_empty());
+        assert!(parsed.search_history.is_empty());
+        assert!(parsed.exec_history.is_empty());
+    }
+
+    #[test]
+    fn alias_can_be_set_and_cleared() {
+        let mut history = HistoryData::default();
+        history.set_alias("firefox", "  Web  ".to_string());
+        assert_eq!(history.alias("firefox"), Some(&"Web".to_string()));
+        // An empty alias restores the original name.
+        history.set_alias("firefox", String::new());
+        assert!(history.alias("firefox").is_none());
+    }
+
+    #[test]
+    fn shortcuts_are_unique_per_app() {
+        let mut history = HistoryData::default();
+        history.set_shortcut(1, "firefox");
+        history.set_shortcut(2, "firefox");
+        // The app moved: the old number is released.
+        assert!(history.shortcut_for(1).is_none());
+        assert_eq!(history.shortcut_for(2), Some(&"firefox".to_string()));
+        assert_eq!(history.next_free_shortcut(), Some(1));
+        history.clear_shortcut(2);
+        assert!(history.shortcut_for(2).is_none());
+    }
+
+    #[test]
+    fn search_and_exec_history_dedup_and_cap() {
+        let mut history = HistoryData::default();
+        history.record_search("rust");
+        history.record_search("egui");
+        history.record_search("rust");
+        assert_eq!(history.recent_searches(10), vec!["rust", "egui"]);
+        history.record_exec("ls -la");
+        assert_eq!(history.recent_execs(10), vec!["ls -la"]);
+        for i in 0..60 {
+            history.record_exec(&format!("cmd {i}"));
+        }
+        assert_eq!(history.recent_execs(usize::MAX).len(), MAX_HISTORY_ITEMS);
+    }
+
+    #[test]
+    fn new_fields_survive_serde_roundtrip() {
+        let mut history = HistoryData::default();
+        history.set_alias("app", "Alias".to_string());
+        history.set_shortcut(3, "app");
+        history.record_search("query");
+        history.record_exec("do-thing");
+        let json = serde_json::to_string(&history).unwrap();
+        let parsed: HistoryData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.alias("app"), Some(&"Alias".to_string()));
+        assert_eq!(parsed.shortcut_for(3), Some(&"app".to_string()));
+        assert_eq!(parsed.recent_searches(5), vec!["query"]);
+        assert_eq!(parsed.recent_execs(5), vec!["do-thing"]);
     }
 }

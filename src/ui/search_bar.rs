@@ -17,6 +17,7 @@ impl RissApp {
                 self.query.clear();
             } else {
                 self.show_all_apps = false;
+                self.show_hidden = false;
             }
             self.update_results();
         }
@@ -27,7 +28,7 @@ impl RissApp {
             self.selected_index = (self.selected_index + 1).min(self.results.len() - 1);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !self.results.is_empty() {
-            self.launch_result(self.selected_index);
+            self.activate(self.selected_index);
         }
     }
 
@@ -79,6 +80,7 @@ impl RissApp {
                             self.screen = Screen::Settings;
                         } else {
                             self.show_all_apps = !self.show_all_apps;
+                            self.show_hidden = false;
                             self.update_results();
                         }
                     }
@@ -97,6 +99,7 @@ impl RissApp {
                     );
                     if response.changed() {
                         self.show_all_apps = false;
+                        self.show_hidden = false;
                         self.update_results();
                     }
                     // KISS swaps the menu button for a clear (X) button while
@@ -127,6 +130,7 @@ impl RissApp {
                             self.update_results();
                         } else if swap {
                             self.show_all_apps = !self.show_all_apps;
+                            self.show_hidden = false;
                             self.update_results();
                         } else {
                             self.screen = Screen::Settings;

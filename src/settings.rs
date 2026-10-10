@@ -113,6 +113,9 @@ fn default_bools() -> HashMap<String, bool> {
         ("enable-timer", true),
         ("enable-shortcuts", true),
         ("enable-search", true),
+        ("enable-exec", true),
+        ("enable-calculator", true),
+        ("search-through-history", true),
         ("enable-excluded-apps", false),
         ("always-default-web-search-on-enter", false),
         ("large-search-bar", false),
@@ -563,6 +566,19 @@ pub fn specs() -> Vec<SettingSpec> {
             Action
         ),
         s!("Search providers", "enable-search", "Web search", Toggle),
+        s!("Search providers", "enable-exec", "Shell commands", Toggle),
+        s!(
+            "Search providers",
+            "enable-calculator",
+            "Calculator",
+            Toggle
+        ),
+        s!(
+            "Search providers",
+            "search-through-history",
+            "Previous searches",
+            Toggle
+        ),
         s!(
             "Search providers",
             "enable-excluded-apps",
