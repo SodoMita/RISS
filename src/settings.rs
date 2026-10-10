@@ -1,7 +1,6 @@
+use crate::storage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 
 /// Persistent launcher preferences. Keys intentionally mirror KISS so exported
 /// configurations and the settings screen remain familiar.
@@ -23,42 +22,18 @@ impl Default for SettingsData {
 }
 
 impl SettingsData {
-    fn path() -> PathBuf {
-        #[cfg(target_os = "android")]
-        {
-            PathBuf::from("settings.json")
-        }
-        #[cfg(not(target_os = "android"))]
-        {
-            let mut path = std::env::var("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from("."));
-            path.push(".config/riss-launcher");
-            let _ = fs::create_dir_all(&path);
-            path.push("settings.json");
-            path
-        }
+    /// Load settings, returning the data plus human-readable notes about any
+    /// storage problems that were recovered from.
+    pub fn load() -> (Self, Vec<String>) {
+        let (mut loaded, notes) = storage::load::<Self>(storage::SETTINGS_FILE)
+            .into_value(storage::SETTINGS_FILE, Self::default());
+        merge_defaults(&mut loaded);
+        (loaded, notes)
     }
 
-    pub fn load() -> Self {
-        let mut loaded = fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|s| serde_json::from_str::<Self>(&s).ok())
-            .unwrap_or_default();
-        // serde defaults only apply when the whole map is absent; merge newly-added keys.
-        for (key, value) in default_bools() {
-            loaded.bools.entry(key).or_insert(value);
-        }
-        for (key, value) in default_values() {
-            loaded.values.entry(key).or_insert(value);
-        }
-        loaded
-    }
-
-    pub fn save(&self) {
-        if let Ok(data) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(Self::path(), data);
-        }
+    pub fn save(&self) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        storage::save(storage::SETTINGS_FILE, &json)
     }
 
     pub fn enabled(&self, key: &str) -> bool {
@@ -70,9 +45,20 @@ impl SettingsData {
     pub fn number(&self, key: &str, fallback: usize) -> usize {
         self.value(key).parse().unwrap_or(fallback)
     }
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> std::io::Result<()> {
         *self = Self::default();
-        self.save();
+        self.save()
+    }
+}
+
+/// Fill in any keys a saved file does not mention. serde defaults only apply
+/// when the whole map is absent, so newly-added keys must be merged in by hand.
+pub fn merge_defaults(data: &mut SettingsData) {
+    for (key, value) in default_bools() {
+        data.bools.entry(key).or_insert(value);
+    }
+    for (key, value) in default_values() {
+        data.values.entry(key).or_insert(value);
     }
 }
 
@@ -212,7 +198,7 @@ const NIGHT: &[&str] = &["system", "light", "dark"];
 const DEFAULT: &[&str] = &["default", "show", "hide"];
 const SIZE: &[&str] = &["small", "default", "large"];
 const SHAPES: &[&str] = &["system", "circle", "square", "rounded", "squircle"];
-const HISTORY: &[&str] = &["recency", "frequency", "alphabetical"];
+const HISTORY: &[&str] = &["recency", "frequency", "frecent", "alphabetical"];
 const SORT: &[&str] = &["relevance", "alphabetical", "recency", "frequency"];
 const GESTURES: &[&str] = &[
     "do-nothing",
@@ -709,4 +695,67 @@ pub fn specs() -> Vec<SettingSpec> {
         s!("Advanced", "rate-app", "Rate RISS", Action),
         s!("Advanced", "reset-all", "Reset every setting", Action),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_non_action_spec_has_a_default() {
+        let defaults = SettingsData::default();
+        for spec in specs() {
+            match spec.kind {
+                SettingKind::Toggle => {
+                    assert!(
+                        defaults.bools.contains_key(spec.key),
+                        "toggle spec '{}' has no default bool",
+                        spec.key
+                    );
+                }
+                SettingKind::Number { .. } | SettingKind::Choice(_) | SettingKind::Text => {
+                    assert!(
+                        defaults.values.contains_key(spec.key),
+                        "value spec '{}' has no default value",
+                        spec.key
+                    );
+                }
+                SettingKind::Action => {}
+            }
+        }
+    }
+
+    #[test]
+    fn merge_defaults_fills_missing_keys_but_keeps_overrides() {
+        let mut data = SettingsData::default();
+        // Simulate an old file that is missing newer keys and overrides one.
+        data.bools.remove("freeze-history");
+        data.values.insert("theme".to_owned(), "light".to_owned());
+        data.values.remove("history-mode");
+        merge_defaults(&mut data);
+        assert_eq!(data.bools.get("freeze-history"), Some(&false));
+        assert_eq!(data.values.get("theme"), Some(&"light".to_owned()));
+        assert_eq!(data.values.get("history-mode"), Some(&"recency".to_owned()));
+    }
+
+    #[test]
+    fn history_mode_choices_are_parseable() {
+        use crate::history::HistoryMode;
+        for option in HISTORY {
+            // from_key never panics; recency is the documented fallback.
+            let _ = HistoryMode::from_key(option);
+        }
+        assert_eq!(HistoryMode::from_key("frecent"), HistoryMode::Frecent);
+    }
+
+    #[test]
+    fn serde_roundtrip_preserves_values() {
+        let mut data = SettingsData::default();
+        data.bools.insert("freeze-history".to_owned(), true);
+        data.values.insert("theme".to_owned(), "dark".to_owned());
+        let json = serde_json::to_string(&data).unwrap();
+        let parsed: SettingsData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.bools.get("freeze-history"), Some(&true));
+        assert_eq!(parsed.values.get("theme"), Some(&"dark".to_owned()));
+    }
 }
