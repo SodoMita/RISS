@@ -58,6 +58,15 @@ fn cog_tooth(center: Pos2, angle: f32) -> Vec<Pos2> {
 /// KISS hides the circle and not the bar's other buttons (issue #55).
 /// `show_kiss_dot` controls whether the Kiss ring's center dot is shown
 /// (all-apps mode only).
+/// Which glyphs the `pref-hide-circle` setting suppresses: the launcher circle
+/// only. Extracted from `bar_icon_button` so the rule has a test that can
+/// actually fail — the variant that existed on the `build` branch recomputed the
+/// rule from local booleans inside the test body, so it passed no matter what
+/// the widget did.
+fn glyph_visible(icon: BarIcon, show_glyph: bool) -> bool {
+    show_glyph || !matches!(icon, BarIcon::Kiss)
+}
+
 pub(super) fn bar_icon_button(
     ui: &mut egui::Ui,
     icon: BarIcon,
@@ -88,8 +97,7 @@ pub(super) fn bar_icon_button(
             painter.circle_filled(center, 17.0, feedback_fill(icon_color, 30));
         }
 
-        let show_glyph = show_glyph || !matches!(icon, BarIcon::Kiss);
-        if show_glyph {
+        if glyph_visible(icon, show_glyph) {
             match icon {
                 BarIcon::Kiss => {
                     // `ic_launcher_white.xml`: outer diameter is 87% of the
@@ -142,6 +150,29 @@ pub(super) fn bar_icon_button(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hide_circle_suppresses_only_the_launcher_circle() {
+        // The rule lives in glyph_visible so this can fail: the variant on the
+        // build branch recomputed the condition from local booleans and passed
+        // whatever the widget did.
+        for icon in [BarIcon::Cog, BarIcon::Clear] {
+            assert!(
+                glyph_visible(icon, false),
+                "the cog and clear glyphs must survive pref-hide-circle (#55)"
+            );
+        }
+        assert!(
+            !glyph_visible(BarIcon::Kiss, false),
+            "hiding the circle means the circle is not drawn"
+        );
+        for icon in [BarIcon::Kiss, BarIcon::Cog, BarIcon::Clear] {
+            assert!(
+                glyph_visible(icon, true),
+                "everything is drawn when the setting is off"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]
