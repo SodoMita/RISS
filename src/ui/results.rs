@@ -7,6 +7,7 @@ use crate::android_app_entry::{self as app_entry, AppEntry};
 use crate::app_entry::{self, AppEntry};
 use crate::search::{self, MatchType, SearchResult};
 use eframe::egui::{self, Color32, CornerRadius, FontId, RichText, Sense, Stroke, Vec2};
+use std::time::Instant;
 
 impl RissApp {
     fn icon_texture(&mut self, ctx: &egui::Context, entry: &AppEntry) -> Option<egui::TextureId> {
@@ -430,13 +431,18 @@ impl RissApp {
         let mut reset_rank = false;
         let mut toggle_history_exclusion = false;
         let mut toggle_exclusion = false;
-        let mut uninstall = false;
         let mut copy_name = false;
         let mut copy_exec = false;
         let mut open_desktop = false;
+        let mut uninstall = false;
         let mut pin: Option<u8> = None;
         let excluded_from_history = self.is_excluded_from_history(&result.entry);
         let excluded_from_search = self.is_excluded_from_search(&result.entry);
+        // A second press of "Uninstall" within the confirmation window runs
+        // the removal; anything else just arms the confirmation.
+        let uninstall_pending = self.pending_uninstall.as_ref().is_some_and(|(exec, at)| {
+            *exec == result.entry.exec && at.elapsed() <= super::UNINSTALL_CONFIRM_WINDOW
+        });
         // Precomputed so the context-menu closure needs no access to `self`.
         let mut pin_labels: Vec<(u8, String)> = Vec::new();
         for key in 1..=9u8 {
@@ -516,6 +522,19 @@ impl RissApp {
                     toggle_history_exclusion = true;
                     ui.close();
                 }
+                let uninstall_enabled = result.entry.can_uninstall();
+                let uninstall_label = if uninstall_pending {
+                    "Confirm uninstall"
+                } else {
+                    "Uninstall"
+                };
+                if ui
+                    .add_enabled(uninstall_enabled, egui::Button::new(uninstall_label))
+                    .clicked()
+                {
+                    uninstall = true;
+                    ui.close();
+                }
                 ui.menu_button("Pin to number", |ui| {
                     for (key, label) in &pin_labels {
                         if ui.button(label.clone()).clicked() {
@@ -526,14 +545,6 @@ impl RissApp {
                 });
                 if ui.button("Reset usage rank").clicked() {
                     reset_rank = true;
-                    ui.close();
-                }
-                let uninstall_enabled = !result.entry.is_system;
-                if ui
-                    .add_enabled(uninstall_enabled, egui::Button::new("Uninstall"))
-                    .clicked()
-                {
-                    uninstall = true;
                     ui.close();
                 }
                 ui.separator();
@@ -614,6 +625,27 @@ impl RissApp {
             });
             self.reload_apps();
         }
+        if uninstall {
+            let entry = result.entry.clone();
+            if uninstall_pending {
+                self.pending_uninstall = None;
+                match entry.uninstall() {
+                    Ok(()) => {
+                        self.reload_apps();
+                        self.set_status(format!("Uninstalling {}", shown_name));
+                    }
+                    Err(error) => self.set_status(error),
+                }
+            } else {
+                match entry.uninstall_preview() {
+                    Ok(summary) => {
+                        self.pending_uninstall = Some((entry.exec.clone(), Instant::now()));
+                        self.set_status(format!("{summary} — press Uninstall again to confirm"));
+                    }
+                    Err(error) => self.set_status(error),
+                }
+            }
+        }
         if toggle_history_exclusion {
             let entry = result.entry.clone();
             self.set_excluded_from_history(&entry, !excluded_from_history);
@@ -634,16 +666,6 @@ impl RissApp {
                 .alias(&result.entry.exec)
                 .cloned()
                 .unwrap_or_default();
-        }
-        if uninstall {
-            let entry = result.entry.clone();
-            match entry.uninstall() {
-                Ok(()) => {
-                    self.reload_apps();
-                    self.set_status(format!("Uninstalling {}", shown_name));
-                }
-                Err(error) => self.set_status(error),
-            }
         }
         if copy_name {
             if crate::providers::copy_to_clipboard(&shown_name) {

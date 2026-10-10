@@ -71,6 +71,7 @@ impl AppEntry {
         }
     }
 
+    /// Uninstall the application via the system package uninstaller.
     pub fn uninstall(&self) -> Result<(), String> {
         #[cfg(target_os = "android")]
         {
@@ -83,6 +84,20 @@ impl AppEntry {
         }
     }
 
+    /// Whether the Uninstall action can do anything for this entry.
+    ///
+    /// Virtual entries have nothing to uninstall, and apps discovered as
+    /// system apps cannot be removed without root.
+    pub fn can_uninstall(&self) -> bool {
+        !self.is_virtual() && !self.categories.iter().any(|category| category == "System")
+    }
+
+    /// Describe what Uninstall would do, without running anything.
+    pub fn uninstall_preview(&self) -> Result<String, String> {
+        if !self.can_uninstall() {
+            return Err(format!("{} cannot be uninstalled", self.name));
+        }
+        Ok(format!("Opens Android's uninstaller for {}", self.name))
     pub fn open_app_info(&self) -> Result<(), String> {
         #[cfg(target_os = "android")]
         {
