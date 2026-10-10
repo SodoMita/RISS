@@ -69,7 +69,7 @@ case "$MODE" in
         WLR_BACKENDS=headless \
             WLR_LIBINPUT_NO_DEVICES=1 \
             WLR_RENDERER_ALLOW_SOFTWARE=1 \
-            cage bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
+            cage -- bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
             2>>"$LOG" || fail "cage session failed (see log)"
         ;;
     --run-child)
