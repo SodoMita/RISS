@@ -282,7 +282,7 @@ pub fn load_app_icon_jni(package_name: &str) -> Option<IconPixels> {
     }
 
     let vm = unsafe { jni::JavaVM::from_raw(vm_ptr).ok()? };
-    let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jobject) };
+    let activity = unsafe { JObject::from_raw(app_cb.activity_as_ptr() as jobject) };
     let mut env = vm.attach_current_thread().ok()?;
     let result = env
         .with_local_frame(32, |env| {
@@ -800,8 +800,12 @@ pub fn make_window_translucent_jni() {
         }
     };
 
+    // The callback owns its own handle: moving `app` into the closure while
+    // `run_on_java_main_thread(&self)` still borrows it is E0505, which broke
+    // the Android build of the wallpaper fix.
+    let app_cb = app.clone();
     app.run_on_java_main_thread(Box::new(move || {
-        let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+        let vm_ptr = app_cb.vm_as_ptr() as *mut JavaVMPtr;
         if vm_ptr.is_null() {
             error!("JavaVM pointer is null; cannot make the window translucent");
             return;
@@ -823,7 +827,7 @@ pub fn make_window_translucent_jni() {
             }
         };
 
-        let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jobject) };
+        let activity = unsafe { JObject::from_raw(app_cb.activity_as_ptr() as jobject) };
         let window = match env
             .call_method(&activity, "getWindow", "()Landroid/view/Window;", &[])
             .and_then(|value| value.l())
