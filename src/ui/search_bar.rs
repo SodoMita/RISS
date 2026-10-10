@@ -12,6 +12,18 @@ impl RissApp {
             }
             return;
         }
+        if self.screen == Screen::Favorites {
+            // Escape leaves the tag editor open on the first press, then goes
+            // back to wherever the favorites manager was opened from.
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if self.editing_tags.is_some() {
+                    self.editing_tags = None;
+                } else {
+                    self.close_favorites_manager();
+                }
+            }
+            return;
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if !self.query.is_empty() {
                 self.query.clear();

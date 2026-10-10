@@ -1,3 +1,4 @@
+use super::favorites::FavoriteAction;
 use super::widgets::{self, Icon};
 use super::{Palette, RissApp};
 #[cfg(target_os = "android")]
@@ -45,12 +46,7 @@ impl RissApp {
     }
 
     pub(super) fn show_favorites(&mut self, ui: &mut egui::Ui, p: Palette) {
-        let favorites: Vec<AppEntry> = self
-            .apps
-            .iter()
-            .filter(|a| a.is_favorite)
-            .cloned()
-            .collect();
+        let favorites = self.favorite_bar_entries();
         if favorites.is_empty() {
             return;
         }
@@ -60,17 +56,21 @@ impl RissApp {
         } else {
             44.0
         };
+        let font_size = if icon_size > 44.0 { 22.0 } else { 18.0 };
         let mut launch_exec = None;
+        let mut action = None;
         egui::ScrollArea::horizontal().show(ui, |ui| {
             ui.horizontal(|ui| {
-                for app in favorites {
-                    let shown_name = self.display_name(&app);
+                // One slot of the bar: what a drag has to cover to swap.
+                let pitch = icon_size + ui.spacing().item_spacing.x;
+                for (index, app) in favorites.iter().enumerate() {
+                    let shown_name = self.display_name(app);
                     let (rect, response) =
                         ui.allocate_exact_size(Vec2::splat(icon_size), Sense::click());
                     let response = response.on_hover_text(shown_name.as_str());
                     let icon_texture =
                         if !self.settings.enabled("icons-hide") && ui.is_rect_visible(rect) {
-                            self.icon_texture(ui.ctx(), &app)
+                            self.icon_texture(ui.ctx(), app)
                         } else {
                             None
                         };
@@ -86,20 +86,83 @@ impl RissApp {
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
                             widgets::first_letter(&shown_name),
-                            FontId::proportional(if icon_size > 44.0 { 22.0 } else { 18.0 }),
+                            FontId::proportional(font_size),
                             p.text,
                         );
                     } else {
                         widgets::paint_app_badge(ui, rect, &shown_name, icon_size, &p);
                     }
-                    if response.clicked() {
+                    let popup_id = egui::Popup::default_response_id(&response);
+                    let dragging =
+                        self.track_favorite_drag(ui.ctx(), &app.exec, popup_id, pitch, &response);
+                    if dragging {
+                        ui.painter().circle_stroke(
+                            rect.center(),
+                            icon_size * 0.5 + 2.0,
+                            Stroke::new(2.0_f32, p.accent),
+                        );
+                    }
+                    if response.clicked() && !dragging {
                         launch_exec = Some(app.exec.clone());
                     }
+                    // KISS answers a long press on a favorite with the same
+                    // popup menu a search row shows (forwarder/Favorites
+                    // .onLongClick -> Result.getPopupMenu), whose
+                    // "Remove favorite" item calls
+                    // DataHandler.removeFromFavorites. Holding that same long
+                    // press and dragging reorders the bar; Move and Edit tags
+                    // in the menu are RISS additions.
+                    if response.long_touched() {
+                        egui::Popup::open_id(&response.ctx, popup_id);
+                    }
+                    let exec = app.exec.clone();
+                    response.context_menu(|ui| {
+                        ui.set_min_width(210.0);
+                        ui.label(RichText::new(shown_name.as_str()).strong());
+                        ui.separator();
+                        if ui.button("Open").clicked() {
+                            action = Some(FavoriteAction::Open(exec.clone()));
+                            ui.close();
+                        }
+                        if ui.button("Remove favorite").clicked() {
+                            action = Some(FavoriteAction::Remove(exec.clone()));
+                            ui.close();
+                        }
+                        if index > 0 && ui.button("Move left").clicked() {
+                            action = Some(FavoriteAction::Move {
+                                exec: exec.clone(),
+                                delta: -1,
+                            });
+                            ui.close();
+                        }
+                        if index + 1 < favorites.len() && ui.button("Move right").clicked() {
+                            action = Some(FavoriteAction::Move {
+                                exec: exec.clone(),
+                                delta: 1,
+                            });
+                            ui.close();
+                        }
+                        if ui.button("Edit tags").clicked() {
+                            action = Some(FavoriteAction::EditTags(exec.clone()));
+                            ui.close();
+                        }
+                        if ui.button("Manage favorites…").clicked() {
+                            action = Some(FavoriteAction::Manage);
+                            ui.close();
+                        }
+                        let hint = RichText::new("Long-press a favorite for actions")
+                            .small()
+                            .color(p.dim);
+                        ui.label(hint);
+                    });
                 }
             });
         });
         if let Some(exec) = launch_exec {
             self.launch_exec(&exec);
+        }
+        if let Some(action) = action {
+            self.apply_favorite_action(action);
         }
     }
 
@@ -336,6 +399,7 @@ impl RissApp {
             self.selected_index = index;
         }
         let mut edit = false;
+        let mut manage_favorites = false;
         let mut rename = false;
         let mut launch = false;
         let mut reset_rank = false;
@@ -371,19 +435,21 @@ impl RissApp {
                     launch = true;
                     ui.close();
                 }
-                if ui
-                    .button(if result.entry.is_favorite {
-                        "Remove from favorites"
-                    } else {
-                        "Add to favorites"
-                    })
-                    .clicked()
-                {
+                let favorite_label = if result.entry.is_favorite {
+                    "Remove favorite"
+                } else {
+                    "Add to favorites"
+                };
+                if ui.button(favorite_label).clicked() {
                     toggle = true;
                     ui.close();
                 }
                 if ui.button("Edit tags").clicked() {
                     edit = true;
+                    ui.close();
+                }
+                if ui.button("Manage favorites…").clicked() {
+                    manage_favorites = true;
                     ui.close();
                 }
                 if ui.button("Rename…").clicked() {
@@ -478,6 +544,9 @@ impl RissApp {
             self.editing_tags = Some(result.entry.exec.clone());
             self.tag_input = result.entry.tags.join(", ");
         }
+        if manage_favorites {
+            self.apply_favorite_action(FavoriteAction::Manage);
+        }
         if rename {
             self.editing_alias = Some(result.entry.exec.clone());
             self.alias_input = self
@@ -522,7 +591,7 @@ impl RissApp {
         ui.add_space(2.0);
     }
 
-    fn show_tag_editor(&mut self, ui: &mut egui::Ui, exec: &str, p: Palette) {
+    pub(super) fn show_tag_editor(&mut self, ui: &mut egui::Ui, exec: &str, p: Palette) {
         egui::Frame::NONE
             .fill(p.surface)
             .corner_radius(CornerRadius::same(8))

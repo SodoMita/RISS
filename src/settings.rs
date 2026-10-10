@@ -267,6 +267,7 @@ pub fn specs() -> Vec<SettingSpec> {
             "Include notifications",
             Toggle
         ),
+        s!("Favorites", "manage-favorites", "Manage favorites", Action),
         s!("Favorites", "reset-favorites", "Clear favorites", Action),
         s!(
             "Favorites",

@@ -10,7 +10,7 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 
 🔍 **Fuzzy Search** - Find apps quickly with intelligent fuzzy matching
 
-⭐ **Favorites** - Mark frequently used apps as favorites for quick access
+⭐ **Favorites** - Mark apps as favorites, then long-press the bar to remove, reorder and retag them, or edit the whole bar on one screen
 
 📊 **Usage Tracking** - Automatically tracks launch counts and shows frequently used apps
 
@@ -81,8 +81,13 @@ cargo build --release
 ### Features Guide
 
 #### Favorites
-- Click the star (★/☆) icon next to any app to add/remove it from favorites
-- Favorites appear at the top when the search field is empty
+- Long-press (or right-click) any app and pick **Add to favorites**
+- Favorites sit in the bar above the search field and launch on a single tap
+- Long-press a favorite in the bar for the same menu a search row shows (as in KISS): **Open**, **Remove favorite**, **Move left** / **Move right**, **Edit tags**, **Manage favorites…**
+- Settings → Favorites → **Manage favorites** edits the whole bar: ◀ ▶ reorder, ✕ remove, 🏷 retag, **Clear all favorites**, and a search box to add more
+- Long press a favorite and drag it sideways to reorder the bar, as in KISS: the popup closes once the icon moves and the order is saved when you let go
+- **Move left** / **Move right** in the same menu reorder one slot at a time; a plain swipe still scrolls the bar
+- Favorites whose app was uninstalled or excluded stay listed there, so stale entries can be deleted instead of being unreachable
 
 #### Tags
 - Click the tag icon (🏷️) next to an app to add custom tags
@@ -201,6 +206,7 @@ riss-launcher/
 │   ├── ui/              # UI components and main app state
 │   │   ├── mod.rs       # App state, providers, timer, actions
 │   │   ├── results.rs   # Result rows, favorites, context menu
+│   │   ├── favorites.rs # Favorites manager: delete, reorder, retag, add
 │   │   ├── search_bar.rs# Search bar and keyboard handling
 │   │   ├── settings.rs  # Settings screen and backup actions
 │   │   ├── colors.rs    # Theme palette
