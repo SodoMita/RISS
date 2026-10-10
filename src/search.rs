@@ -58,6 +58,122 @@ pub enum ResultAction {
     Excluded { exec: String },
 }
 
+/// One application's search corpus, precomputed once per app-list reload.
+///
+/// KISS keeps exactly this on the pojo itself: `Pojo.setName()` fills
+/// `normalizedName` and `AppPojo` fills `normalizedTags` when tags change, so
+/// `AppProvider.requestResults` only has to normalize the query and can then
+/// match against ready-made code points. RISS used to lower-case the display
+/// name, rebuild the joined "searchable text" and re-lower-case every tag of
+/// every installed application on *every keystroke*.
+#[derive(Debug, Clone, Default)]
+pub struct IndexedApp {
+    /// Position of this row inside [`SearchIndex`].
+    pub position: u32,
+    pub exec: String,
+    /// Display name (alias honored) in lower case, for exact/prefix tiers.
+    pub name_lower: String,
+    /// `name_lower` split on whitespace, for the word-prefix tier.
+    pub words_lower: Vec<String>,
+    /// Tags in lower case, for the tag-prefix tier.
+    pub tags_lower: Vec<String>,
+    /// Categories in lower case, for the category-prefix tier.
+    pub categories_lower: Vec<String>,
+    /// Name + comment + tags + categories, original case, for fuzzy matching.
+    /// The fuzzy matcher is smart-case, so the haystack keeps its case.
+    pub corpus: String,
+    pub launch_count: u32,
+}
+
+/// Precomputed search corpus for a list of applications.
+#[derive(Debug, Clone, Default)]
+pub struct SearchIndex {
+    rows: Vec<IndexedApp>,
+    entries: Vec<AppEntry>,
+}
+
+impl SearchIndex {
+    /// Build the index for `apps`, honoring the user's renames.
+    pub fn build(apps: &[AppEntry], aliases: &HashMap<String, String>) -> SearchIndex {
+        let mut index = SearchIndex {
+            rows: Vec::with_capacity(apps.len()),
+            entries: Vec::with_capacity(apps.len()),
+        };
+        for (position, app) in apps.iter().enumerate() {
+            let name = display_name(app, aliases);
+            let name_lower = name.to_lowercase();
+            let words_lower = name_lower
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let tags_lower = app
+                .tags
+                .iter()
+                .map(|tag| tag.to_lowercase())
+                .collect::<Vec<_>>();
+            let categories_lower = app
+                .categories
+                .iter()
+                .map(|category| category.to_lowercase())
+                .collect::<Vec<_>>();
+
+            let mut corpus = String::with_capacity(name.len() + app.comment.len() + 16);
+            // The alias goes in front of the original name, exactly like the
+            // old `searchable_text()`: a rename must not make the real name
+            // unfindable.
+            if aliases.get(&app.exec).is_some() {
+                corpus.push_str(&name);
+                corpus.push(' ');
+            }
+            corpus.push_str(&app.name);
+            if !app.comment.is_empty() {
+                corpus.push(' ');
+                corpus.push_str(&app.comment);
+            }
+            for tag in &app.tags {
+                corpus.push(' ');
+                corpus.push_str(tag);
+            }
+            for category in &app.categories {
+                corpus.push(' ');
+                corpus.push_str(category);
+            }
+
+            index.rows.push(IndexedApp {
+                position: position as u32,
+                exec: app.exec.clone(),
+                name_lower,
+                words_lower,
+                tags_lower,
+                categories_lower,
+                corpus,
+                launch_count: app.launch_count,
+            });
+            index.entries.push(app.clone());
+        }
+        index
+    }
+
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    /// The indexed row at `position`, if it exists.
+    pub fn get(&self, position: u32) -> Option<&IndexedApp> {
+        self.rows.get(position as usize)
+    }
+
+    /// The application at `position`.
+    pub fn entry(&self, position: u32) -> &AppEntry {
+        &self.entries[position as usize]
+    }
+}
+
 /// Search engine for apps
 pub struct SearchEngine {
     matcher: SkimMatcherV2,
@@ -70,12 +186,20 @@ impl SearchEngine {
         }
     }
 
-    /// Search through apps with the given query
+    /// Search the prebuilt [`SearchIndex`] for `query`.
+    ///
+    /// `candidates` lists the index positions allowed to match, which is how
+    /// the caller keeps excluded applications out of typed queries without
+    /// keeping a second copy of the whole app list.
+    ///
+    /// Only the applications that actually match are cloned into a
+    /// [`SearchResult`]; RISS used to clone all of them before truncating to
+    /// the configured number of display elements.
     pub fn search(
         &self,
         query: &str,
-        apps: &[AppEntry],
-        aliases: &HashMap<String, String>,
+        index: &SearchIndex,
+        candidates: &[u32],
         max_results: usize,
     ) -> Vec<SearchResult> {
         let query = query.trim();
@@ -85,96 +209,99 @@ impl SearchEngine {
         }
 
         let query_lower = query.to_lowercase();
-        let mut results: Vec<SearchResult> = apps
-            .iter()
-            .filter_map(|app| {
-                let name_lower = display_name(app, aliases).to_lowercase();
-                let searchable = searchable_text(app, aliases);
+        let mut results: Vec<SearchResult> = Vec::new();
 
-                // Exact match on name
-                if name_lower == query_lower {
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: 10000,
-                        match_type: MatchType::Exact,
-                        action: ResultAction::Launch,
-                    });
-                }
+        for &position in candidates {
+            let Some(row) = index.get(position) else {
+                continue;
+            };
 
-                // Prefix match on name
-                if name_lower.starts_with(&query_lower) {
-                    let score = 5000 + (100 - name_lower.len() as i64);
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score,
-                        match_type: MatchType::Prefix,
-                        action: ResultAction::Launch,
-                    });
-                }
+            // Exact match on name
+            if row.name_lower == query_lower {
+                results.push(self.result(index, position, 10000, MatchType::Exact));
+                continue;
+            }
 
-                // Word match inside the name ("fire" matching "Firefox Nightly")
-                if name_lower
-                    .split_whitespace()
-                    .any(|w| w.starts_with(&query_lower))
-                {
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: 4000,
-                        match_type: MatchType::Prefix,
-                        action: ResultAction::Launch,
-                    });
-                }
+            // Prefix match on name
+            if row.name_lower.starts_with(&query_lower) {
+                let score = 5000 + (100 - row.name_lower.len() as i64);
+                results.push(self.result(index, position, score, MatchType::Prefix));
+                continue;
+            }
 
-                // Tag match
-                for tag in &app.tags {
-                    if tag.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 3000,
-                            match_type: MatchType::Tag,
-                            action: ResultAction::Launch,
-                        });
-                    }
-                }
+            // Word match inside the name ("fire" matching "Firefox Nightly")
+            if row
+                .words_lower
+                .iter()
+                .any(|word| word.starts_with(&query_lower))
+            {
+                results.push(self.result(index, position, 4000, MatchType::Prefix));
+                continue;
+            }
 
-                // Category match
-                for cat in &app.categories {
-                    if cat.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 2000,
-                            match_type: MatchType::Category,
-                            action: ResultAction::Launch,
-                        });
-                    }
-                }
+            // Tag match
+            if row
+                .tags_lower
+                .iter()
+                .any(|tag| tag.starts_with(&query_lower))
+            {
+                results.push(self.result(index, position, 3000, MatchType::Tag));
+                continue;
+            }
 
-                // Fuzzy match on searchable text
-                if let Some(score) = self.matcher.fuzzy_match(&searchable, query) {
-                    // Boost by launch count
-                    let boosted = score + (app.launch_count as i64 * 10);
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: boosted,
-                        match_type: MatchType::Fuzzy,
-                        action: ResultAction::Launch,
-                    });
-                }
+            // Category match
+            if row
+                .categories_lower
+                .iter()
+                .any(|category| category.starts_with(&query_lower))
+            {
+                results.push(self.result(index, position, 2000, MatchType::Category));
+                continue;
+            }
 
-                None
-            })
-            .collect();
+            // Fuzzy match over the whole corpus (name, rename, comment, tags
+            // and categories). KISS matches the name and the tags of a pojo
+            // separately and keeps the better relevance
+            // (`Pojo.updateMatchingRelevance`); RISS folds both into one
+            // haystack, so a tag carries a result even when the query only hits
+            // the middle of it — the match is then reported as `Fuzzy` rather
+            // than `Tag`, because the corpus does not say which part matched.
+            let score = self
+                .matcher
+                .fuzzy_match(&row.corpus, query)
+                .map(|score| score + row.launch_count as i64 * 10);
+            if let Some(score) = score {
+                results.push(self.result(index, position, score, MatchType::Fuzzy));
+            }
+        }
 
         // Sort by score descending, then by name so the order is stable.
-        results.sort_by(|a, b| {
-            b.score.cmp(&a.score).then_with(|| {
-                display_name(&a.entry, aliases)
-                    .to_lowercase()
-                    .cmp(&display_name(&b.entry, aliases).to_lowercase())
-            })
+        // `sort_by_cached_key` builds each key once, instead of allocating two
+        // fresh `String`s per comparison like `sort_by` with `to_lowercase`
+        // inside the comparator did.
+        results.sort_by_cached_key(|result| {
+            (
+                std::cmp::Reverse(result.score),
+                result.entry.name.to_lowercase(),
+            )
         });
         results.truncate(max_results);
         results
+    }
+
+    fn result(
+        &self,
+        index: &SearchIndex,
+        position: u32,
+        score: i64,
+        match_type: MatchType,
+    ) -> SearchResult {
+        SearchResult {
+            entry: index.entry(position).clone(),
+            score,
+            match_type,
+            action: ResultAction::Launch,
+        }
     }
 
     /// Get default apps to show when no search query (favorites + most used)
@@ -213,16 +340,6 @@ pub fn display_name(app: &AppEntry, aliases: &HashMap<String, String>) -> String
         Some(alias) => alias.clone(),
         None => app.name.clone(),
     }
-}
-
-/// Searchable text, including any rename the user gave the app.
-fn searchable_text(app: &AppEntry, aliases: &HashMap<String, String>) -> String {
-    let mut text = app.searchable_text();
-    if let Some(alias) = aliases.get(&app.exec) {
-        text.insert(0, ' ');
-        text.insert_str(0, alias);
-    }
-    text
 }
 
 // --- Synthetic results used by the optional providers ---------------------
@@ -450,6 +567,181 @@ mod tests {
         aliases.insert("exec-key".to_string(), "New Name".to_string());
         assert_eq!(display_name(&entry, &aliases), "New Name");
         assert_eq!(display_name(&entry, &HashMap::new()), "Old Name");
+    }
+
+    fn entry(name: &str, comment: &str, exec: &str) -> AppEntry {
+        let mut app = AppEntry::virtual_entry(name, comment, exec);
+        app.tags = Vec::new();
+        app
+    }
+
+    fn corpus() -> Vec<AppEntry> {
+        let mut browser = entry("Firefox", "Web browser", "firefox");
+        browser.tags = vec!["web browser".to_string(), "internet".to_string()];
+        browser.categories = vec!["Network".to_string()];
+        let mut files = entry("Files", "File manager", "nautilus");
+        files.categories = vec!["Utility".to_string()];
+        let mut terminal = entry("Terminal", "Command line", "kgx");
+        terminal.launch_count = 4;
+        let editor = entry(
+            "GNOME Text Editor",
+            "Write things down",
+            "gnome-text-editor",
+        );
+        vec![browser, files, terminal, editor]
+    }
+
+    fn positions(apps: &[AppEntry]) -> Vec<u32> {
+        (0..apps.len() as u32).collect()
+    }
+
+    fn names(results: &[SearchResult]) -> Vec<String> {
+        results
+            .iter()
+            .map(|result| result.entry.name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn index_matches_the_plain_tiers() {
+        let apps = corpus();
+        let index = SearchIndex::build(&apps, &HashMap::new());
+        let engine = SearchEngine::new();
+        let candidates = positions(&apps);
+
+        assert_eq!(
+            names(&engine.search("firefox", &index, &candidates, 10)),
+            ["Firefox"]
+        );
+        assert_eq!(
+            engine.search("firefox", &index, &candidates, 10)[0].match_type,
+            MatchType::Exact
+        );
+        // Prefix on the name outranks the fuzzy matches the corpus adds.
+        assert_eq!(
+            engine.search("fir", &index, &candidates, 10)[0].entry.name,
+            "Firefox"
+        );
+        // Word prefix inside the name, not at the start of it: "text" is the
+        // second word of "GNOME Text Editor".
+        let by_word = engine.search("text", &index, &candidates, 10);
+        assert_eq!(by_word[0].entry.name, "GNOME Text Editor");
+        assert_eq!(by_word[0].match_type, MatchType::Prefix);
+        // Case insensitive, as before.
+        assert_eq!(
+            engine.search("TERM", &index, &candidates, 10)[0].entry.name,
+            "Terminal"
+        );
+        // Categories keep their prefix tier, ahead of anything the fuzzy
+        // corpus happens to pick up ("net" is also inside "manager").
+        let by_category = engine.search("net", &index, &candidates, 10);
+        assert_eq!(by_category[0].entry.name, "Firefox");
+        assert_eq!(by_category[0].match_type, MatchType::Category);
+    }
+
+    #[test]
+    fn index_honors_renames_like_kiss_aliases() {
+        let apps = corpus();
+        let mut aliases = HashMap::new();
+        aliases.insert("firefox".to_string(), "Netscape".to_string());
+        let index = SearchIndex::build(&apps, &aliases);
+        let engine = SearchEngine::new();
+        let candidates = positions(&apps);
+
+        let results = engine.search("netsc", &index, &candidates, 10);
+        assert_eq!(names(&results), ["Firefox"]);
+        assert_eq!(results[0].match_type, MatchType::Prefix);
+        // The original name still matches too: it stays in the corpus, so a
+        // rename never makes an application unfindable.
+        let original = engine.search("firef", &index, &candidates, 10);
+        assert_eq!(original[0].entry.name, "Firefox");
+        assert_eq!(original[0].match_type, MatchType::Fuzzy);
+    }
+
+    #[test]
+    fn tags_carry_a_match_without_being_a_prefix() {
+        // KISS fuzzy-matches the tags of a pojo (`Pojo.updateMatchingRelevance`)
+        // rather than demanding a prefix. RISS folds the tags into its corpus,
+        // which reaches the same answer: "rowser" finds the "web browser" tag,
+        // reported as a fuzzy match.
+        let apps = corpus();
+        let index = SearchIndex::build(&apps, &HashMap::new());
+        let engine = SearchEngine::new();
+        let candidates = positions(&apps);
+
+        assert_eq!(
+            engine.search("rowser", &index, &candidates, 10)[0]
+                .entry
+                .name,
+            "Firefox"
+        );
+        // A tag prefix is still its own, higher tier.
+        let tag_prefix = engine.search("inter", &index, &candidates, 10);
+        assert_eq!(tag_prefix[0].entry.name, "Firefox");
+        assert_eq!(tag_prefix[0].match_type, MatchType::Tag);
+    }
+
+    #[test]
+    fn history_boost_only_lands_on_fuzzy_matches() {
+        // Deliberate: the launch-count boost keeps its current scope. Teaching
+        // every match type about history is issue #21, owned elsewhere.
+        let apps = corpus();
+        let index = SearchIndex::build(&apps, &HashMap::new());
+        let engine = SearchEngine::new();
+        let candidates = positions(&apps);
+
+        // A query that only fuzzy-matches, so the prefix tiers cannot
+        // short-circuit and hide the boost.
+        let plain = engine.search("trmnl", &index, &candidates, 10);
+        let mut heavier = corpus();
+        heavier[2].launch_count = 40;
+        let boosted_index = SearchIndex::build(&heavier, &HashMap::new());
+        let boosted = engine.search("trmnl", &boosted_index, &candidates, 10);
+        let plain_score = plain
+            .iter()
+            .find(|r| r.entry.name == "Terminal")
+            .expect("Terminal should match")
+            .score;
+        let boosted_score = boosted
+            .iter()
+            .find(|r| r.entry.name == "Terminal")
+            .expect("Terminal should match")
+            .score;
+        assert!(boosted_score > plain_score);
+        assert_eq!(boosted[0].match_type, MatchType::Fuzzy);
+    }
+
+    #[test]
+    fn candidates_limit_what_can_match() {
+        let apps = corpus();
+        let index = SearchIndex::build(&apps, &HashMap::new());
+        let engine = SearchEngine::new();
+
+        // Only the first two applications are allowed to answer.
+        assert!(engine.search("terminal", &index, &[0, 1], 10).is_empty());
+        assert_eq!(
+            names(&engine.search("terminal", &index, &[2], 10)),
+            ["Terminal"]
+        );
+        assert!(engine.search("", &index, &[0, 1, 2], 10).is_empty());
+        // Out-of-range positions are ignored rather than panicking.
+        assert!(engine.search("nope", &index, &[9], 10).is_empty());
+    }
+
+    #[test]
+    fn index_is_built_once_per_reload_not_per_keystroke() {
+        // The index only depends on the app list and the aliases, so two
+        // queries against the same index must return the same rows.
+        let apps = corpus();
+        let index = SearchIndex::build(&apps, &HashMap::new());
+        let engine = SearchEngine::new();
+        let candidates = positions(&apps);
+
+        let first = engine.search("fir", &index, &candidates, 10);
+        let second = engine.search("fir", &index, &candidates, 10);
+        assert_eq!(first.len(), second.len());
+        assert_eq!(first[0].score, second[0].score);
+        assert_eq!(index.len(), apps.len());
     }
 
     #[test]

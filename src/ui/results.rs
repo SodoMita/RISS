@@ -11,27 +11,29 @@ use std::time::Instant;
 
 impl RissApp {
     fn icon_texture(&mut self, ctx: &egui::Context, entry: &AppEntry) -> Option<egui::TextureId> {
-        let key = if entry.icon.trim().is_empty() {
-            entry.exec.clone()
+        // Borrowed key: laying out a result row must not allocate. KISS does
+        // the same by keying its cache on the component name it already holds.
+        let key: &str = if entry.icon.trim().is_empty() {
+            entry.exec.as_str()
         } else {
-            entry.icon.clone()
+            entry.icon.as_str()
         };
-        if let Some(texture) = self.icon_textures.get(&key) {
+        if let Some(texture) = self.icon_textures.get(key) {
             return Some(texture.id());
         }
-        if self.icons_without_image.contains(&key) {
+        if self.icons_without_image.contains(key) {
             return None;
         }
 
         let Some((width, height, rgba)) = app_entry::load_icon_rgba(entry) else {
-            self.icons_without_image.insert(key);
+            self.icons_without_image.insert(key.to_owned());
             return None;
         };
         let valid_size = width
             .checked_mul(height)
             .and_then(|pixels| pixels.checked_mul(4));
         if width == 0 || height == 0 || valid_size != Some(rgba.len()) {
-            self.icons_without_image.insert(key);
+            self.icons_without_image.insert(key.to_owned());
             return None;
         }
 
@@ -244,9 +246,17 @@ impl RissApp {
             });
             return;
         }
-        let results = self.results.clone();
-        for (index, result) in results.iter().enumerate() {
+        // Lay the rows out over a borrowed list instead of cloning every
+        // result (name, comment, exec, tags and categories included) on every
+        // frame. `results_generation` guards the put-back: a row handler that
+        // rebuilds the list underneath us keeps its freshly computed rows.
+        let generation = self.results_generation;
+        let rows = std::mem::take(&mut self.results);
+        for (index, result) in rows.iter().enumerate() {
             self.show_result(ui, index, result, p);
+        }
+        if self.results_generation == generation {
+            self.results = rows;
         }
 
         // Keep gestures on unused space only. The result rows themselves stay
@@ -623,7 +633,7 @@ impl RissApp {
             } else {
                 format!("{} hidden from results", shown_name)
             });
-            self.reload_apps();
+            self.refresh_from_history();
         }
         if toggle_history_exclusion {
             let entry = result.entry.clone();
@@ -644,7 +654,7 @@ impl RissApp {
                 self.pending_uninstall = None;
                 match entry.uninstall() {
                     Ok(()) => {
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status(format!("Uninstalling {}", shown_name));
                     }
                     Err(error) => self.set_status(error),
@@ -663,7 +673,7 @@ impl RissApp {
             let exec = result.entry.exec.clone();
             self.history.reset_rank(&exec);
             self.save_history();
-            self.reload_apps();
+            self.refresh_from_history();
             self.set_status("Usage rank reset");
         }
         if copy_name {
@@ -730,7 +740,7 @@ impl RissApp {
                         self.history.set_tags(exec, tags);
                         self.save_history();
                         self.editing_tags = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                     }
                     if ui.button("Cancel").clicked() {
                         self.editing_tags = None;
@@ -758,14 +768,14 @@ impl RissApp {
                         self.history.set_alias(exec, alias);
                         self.save_history();
                         self.editing_alias = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("App renamed");
                     }
                     if ui.button("Reset").clicked() {
                         self.history.set_alias(exec, String::new());
                         self.save_history();
                         self.editing_alias = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("Name reset to default");
                     }
                     if ui.button("Cancel").clicked() {
@@ -796,7 +806,7 @@ impl RissApp {
                         self.icon_textures.clear();
                         self.icons_without_image.clear();
                         self.editing_icon = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("Custom icon set");
                     }
                     if ui.button("Reset").clicked() {
@@ -805,7 +815,7 @@ impl RissApp {
                         self.icon_textures.clear();
                         self.icons_without_image.clear();
                         self.editing_icon = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("Icon reset to default");
                     }
                     if ui.button("Cancel").clicked() {

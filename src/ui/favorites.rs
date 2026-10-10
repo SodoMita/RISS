@@ -155,7 +155,7 @@ impl RissApp {
         self.editing_tags = None;
         self.favorites_query.clear();
         self.screen = self.favorites_return;
-        self.reload_apps();
+        self.refresh_from_history();
     }
 
     /// Add an app to the end of the favorites bar.
@@ -163,7 +163,7 @@ impl RissApp {
         if self.history.add_favorite(exec) {
             let name = self.favorite_display_name(exec);
             self.save_history();
-            self.reload_apps();
+            self.refresh_from_history();
             self.set_status(format!("{name} was added to favorites"));
         }
     }
@@ -173,7 +173,7 @@ impl RissApp {
         if self.history.remove_favorite(exec) {
             let name = self.favorite_display_name(exec);
             self.save_history();
-            self.reload_apps();
+            self.refresh_from_history();
             self.set_status(format!("{name} was removed from favorites"));
         }
     }
@@ -182,7 +182,7 @@ impl RissApp {
     pub(super) fn move_favorite_exec(&mut self, exec: &str, delta: isize) {
         if self.history.move_favorite_by(exec, delta) {
             self.save_history();
-            self.reload_apps();
+            self.refresh_from_history();
         }
     }
 
@@ -250,7 +250,7 @@ impl RissApp {
                 drag.anchor_x += slots as f32 * pitch;
                 drag.moved = true;
             }
-            self.reload_apps();
+            self.refresh_from_history();
             // The item moved, so its menu is no longer the point.
             egui::Popup::close_id(ctx, popup_id);
             ctx.request_repaint();
@@ -262,7 +262,7 @@ impl RissApp {
     pub(super) fn clear_favorites(&mut self) {
         let count = self.history.clear_favorites();
         self.save_history();
-        self.reload_apps();
+        self.refresh_from_history();
         let message = if count == 0 {
             "No favorites to clear".to_owned()
         } else {
@@ -444,7 +444,7 @@ impl RissApp {
         }
         let matches = self
             .search_engine
-            .search(&query, &self.apps, &self.history.aliases, 12);
+            .search(&query, &self.search_index, &self.included, 12);
         if matches.is_empty() {
             let text = format!("No app matches “{query}”");
             let note = RichText::new(text).size(11.0).color(p.dim);

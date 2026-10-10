@@ -26,7 +26,7 @@ impl RissApp {
                         .clicked()
                     {
                         self.screen = Screen::Launcher;
-                        self.reload_apps();
+                        self.refresh_from_history();
                     }
                     ui.heading("Settings");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -194,7 +194,7 @@ impl RissApp {
                 // Favorites and tags are deliberately preserved.
                 self.history.clear_history();
                 self.save_history();
-                self.reload_apps();
+                self.refresh_from_history();
                 self.set_status("History cleared (favorites kept)");
             }
             "manage-favorites" => self.open_favorites_manager(Screen::Settings),
@@ -204,7 +204,7 @@ impl RissApp {
                     .values
                     .insert("edit-excluded-apps".into(), String::new());
                 self.save_settings();
-                self.reload_apps();
+                self.refresh_from_history();
             }
             "reset-excluded-from-history-apps" => {
                 self.settings
@@ -221,7 +221,7 @@ impl RissApp {
             }
             "reset-all" => {
                 let save_failed = self.settings.reset().err();
-                self.reload_apps();
+                self.refresh_from_history();
                 match save_failed {
                     Some(err) => self.set_status(format!("Settings reset but not saved: {err}")),
                     None => self.set_status("Settings reset"),
@@ -238,7 +238,7 @@ impl RissApp {
                     self.history = history;
                     self.save_settings();
                     self.save_history();
-                    self.reload_apps();
+                    self.refresh_from_history();
                     self.set_status("Backup imported");
                 }
                 Err(error) => self.set_status(error),

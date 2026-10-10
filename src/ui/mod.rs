@@ -3,14 +3,17 @@ use crate::android_app_entry::{self as app_entry, AppEntry};
 #[cfg(not(target_os = "android"))]
 use crate::app_entry::{self, AppEntry};
 use crate::history::{HistoryData, HistoryMode};
-use crate::search::{self, MatchType, ResultAction, ResultView, SearchEngine, SearchResult};
+use crate::search::{
+    self, MatchType, ResultAction, ResultView, SearchEngine, SearchIndex, SearchResult,
+};
 use crate::settings::SettingsData;
 use eframe::egui::{self, RichText};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 mod colors;
 mod favorites;
+mod icon_cache;
 mod icons;
 pub(crate) mod insets;
 mod osk;
@@ -37,6 +40,14 @@ enum Screen {
     Favorites,
 }
 
+/// Textures kept alive for already-decoded application icons.
+///
+/// KISS keeps its decoded icons in a bounded cache and stores the originals as
+/// PNG files on disk; RISS used to keep every icon it had ever shown alive for
+/// the whole session, so a visit to the all-apps list pinned every application
+/// icon in memory.
+pub(crate) const ICON_CACHE_LIMIT: usize = 256;
+
 pub struct RissApp {
     query: String,
     /// Every discovered app, including ones excluded from the lists.
@@ -45,9 +56,18 @@ pub struct RissApp {
     apps: Vec<AppEntry>,
     results: Vec<SearchResult>,
     search_engine: SearchEngine,
+    /// Precomputed per-application search corpus (KISS `Pojo.normalizedName`).
+    search_index: SearchIndex,
+    /// Positions of every indexed application.
+    searchable: Vec<u32>,
+    /// Positions of the applications allowed to answer a typed query.
+    included: Vec<u32>,
+    /// Bumped every time `update_results` recomputes the list, so a row handler
+    /// that rebuilds results mid-layout does not get overwritten.
+    results_generation: u64,
     history: HistoryData,
     settings: SettingsData,
-    icon_textures: HashMap<String, egui::TextureHandle>,
+    icon_textures: icon_cache::LruCache<egui::TextureHandle>,
     icons_without_image: HashSet<String>,
     selected_index: usize,
     screen: Screen,
@@ -105,9 +125,13 @@ impl RissApp {
             apps: Vec::new(),
             results: Vec::new(),
             search_engine: SearchEngine::new(),
+            search_index: SearchIndex::default(),
+            searchable: Vec::new(),
+            included: Vec::new(),
+            results_generation: 0,
             history,
             settings,
-            icon_textures: HashMap::new(),
+            icon_textures: icon_cache::LruCache::new(ICON_CACHE_LIMIT),
             icons_without_image: HashSet::new(),
             selected_index: 0,
             screen: Screen::Launcher,
@@ -137,6 +161,12 @@ impl RissApp {
         app
     }
 
+    /// Scan the disk for applications.
+    ///
+    /// KISS only reloads its app provider when the package list changes (it
+    /// listens to `ACTION_PACKAGE_ADDED`, `_REMOVED` and `_CHANGED`); every
+    /// other change reuses the pojos it already has. RISS used to come here on
+    /// every favorite toggle, rename, tag edit and launch.
     fn reload_apps(&mut self) {
         let mut apps = app_entry::discover_apps();
         for builtin in app_entry::builtin_entries() {
@@ -147,7 +177,16 @@ impl RissApp {
                 apps.push(builtin);
             }
         }
-        for app in &mut apps {
+        self.all_apps = apps;
+        self.refresh_from_history();
+    }
+
+    /// Re-apply history, favorites, tags, aliases and settings to the
+    /// applications we already hold, rebuild the search index and recompute
+    /// the visible results. Nothing touches the disk, so this is cheap enough
+    /// to run on every favorite toggle, rename or settings change.
+    fn refresh_from_history(&mut self) {
+        for app in &mut self.all_apps {
             app.launch_count = self.history.get_launch_count(&app.exec);
             app.last_launched = self.history.get_last_launched(&app.exec);
             app.is_favorite = self.history.is_favorite(&app.exec);
@@ -162,7 +201,6 @@ impl RissApp {
                 app.icon = custom_icon.clone();
             }
         }
-        self.all_apps = apps;
         // Excluded apps disappear from the normal lists; the "Search excluded
         // apps" toggle decides whether typed queries can still find them.
         let excluded: Vec<String> = self
@@ -173,35 +211,44 @@ impl RissApp {
             .filter(|s| !s.is_empty())
             .map(str::to_lowercase)
             .collect();
+        let is_excluded = |app: &AppEntry| -> bool {
+            excluded
+                .iter()
+                .any(|x| app.exec.eq_ignore_ascii_case(x) || app.name.eq_ignore_ascii_case(x))
+        };
         self.apps = self
             .all_apps
             .iter()
-            .filter(|a| {
-                !excluded
-                    .iter()
-                    .any(|x| a.exec.eq_ignore_ascii_case(x) || a.name.eq_ignore_ascii_case(x))
-            })
+            .filter(|app| !is_excluded(app))
             .cloned()
             .collect();
+        self.searchable = (0..self.all_apps.len() as u32).collect();
+        self.included = self
+            .all_apps
+            .iter()
+            .enumerate()
+            .filter_map(|(position, app)| (!is_excluded(app)).then_some(position as u32))
+            .collect();
+        self.search_index = SearchIndex::build(&self.all_apps, &self.history.aliases);
         self.update_results();
     }
 
     fn update_results(&mut self) {
+        self.results_generation += 1;
         let limit = self.settings.number("number-of-display-elements", 20);
         if !self.query.trim().is_empty() {
             // "Search excluded apps" lets typed queries find excluded apps;
             // they never appear in the normal lists either way.
             let query = self.query.trim().to_string();
             let max = if limit == 0 { usize::MAX } else { limit };
-            self.results = {
-                let pool = if self.settings.enabled("enable-excluded-apps") {
-                    &self.all_apps
-                } else {
-                    &self.apps
-                };
-                self.search_engine
-                    .search(&query, pool, &self.history.aliases, max)
+            let candidates: &[u32] = if self.settings.enabled("enable-excluded-apps") {
+                &self.searchable
+            } else {
+                &self.included
             };
+            self.results = self
+                .search_engine
+                .search(&query, &self.search_index, candidates, max);
             if self.settings.enabled("exclude-favorites-apps") {
                 self.results.retain(|r| !r.entry.is_favorite);
             }
@@ -227,7 +274,8 @@ impl RissApp {
                     entry,
                 })
                 .collect();
-            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
+            self.results
+                .sort_by_cached_key(|r| r.entry.name.to_lowercase());
         } else if self.show_all_apps {
             self.results = self
                 .apps
@@ -240,7 +288,8 @@ impl RissApp {
                     action: ResultAction::Launch,
                 })
                 .collect();
-            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
+            self.results
+                .sort_by_cached_key(|r| r.entry.name.to_lowercase());
         } else if self.settings.enabled("history-hide") {
             self.results.clear();
         } else {
@@ -406,23 +455,34 @@ impl RissApp {
         }
         let mode = HistoryMode::from_key(self.settings.value("history-mode"));
         if mode == HistoryMode::Alphabetical {
-            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
+            self.results
+                .sort_by_cached_key(|r| r.entry.name.to_lowercase());
             return;
         }
         let now = HistoryData::now_secs();
-        self.results.sort_by(|a, b| {
-            let score_a = self.history.rank_score(mode, &a.entry.exec, now);
-            let score_b = self.history.rank_score(mode, &b.entry.exec, now);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| {
-                    a.entry
-                        .name
-                        .to_lowercase()
-                        .cmp(&b.entry.name.to_lowercase())
-                })
-        });
+        // Rank scores and name keys are computed once per row instead of once
+        // per comparison: the comparator below used to call `rank_score` twice
+        // and allocate two `String`s for every single comparison.
+        let scores: Vec<f64> = self
+            .results
+            .iter()
+            .map(|r| self.history.rank_score(mode, &r.entry.exec, now))
+            .collect();
+        let rows = std::mem::take(&mut self.results);
+        let mut order: Vec<usize> = (0..rows.len()).collect();
+        // Two stable passes instead of one comparator that re-computed
+        // `rank_score` twice and allocated two `String`s per comparison: rank
+        // scores first, then names, so equal scores still break by name.
+        order.sort_by_cached_key(|&position| rows[position].entry.name.to_lowercase());
+        order.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]));
+        let mut slots: Vec<Option<SearchResult>> = rows.into_iter().map(Some).collect();
+        let mut sorted = Vec::with_capacity(slots.len());
+        for position in order {
+            if let Some(row) = slots[position].take() {
+                sorted.push(row);
+            }
+        }
+        self.results = sorted;
     }
 
     /// Exec commands the user excluded from history recording/display.
@@ -526,7 +586,7 @@ impl RissApp {
                 self.query.clear();
                 self.show_all_apps = false;
                 self.show_hidden = false;
-                self.reload_apps();
+                self.refresh_from_history();
                 self.set_status(format!("Opened {}", name));
             }
             Err(error) => self.set_status(error),
@@ -627,7 +687,7 @@ impl RissApp {
                 if let Some(entry) = entry {
                     self.set_excluded_from_search(&entry, false);
                     self.set_status(format!("{} restored to results", self.display_name(&entry)));
-                    self.reload_apps();
+                    self.refresh_from_history();
                     self.update_results();
                 }
             }
@@ -649,7 +709,7 @@ impl RissApp {
         let favorited = self.history.toggle_favorite(exec);
         let name = self.favorite_display_name(exec);
         self.save_history();
-        self.reload_apps();
+        self.refresh_from_history();
         self.set_status(if favorited {
             format!("{name} was added to favorites")
         } else {
