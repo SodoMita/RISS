@@ -23,10 +23,18 @@
         android:label="RISS Launcher"
         android:hasCode="false">
         
+        <!--
+          adjustResize: shrink the activity's content rect while the
+          on-screen keyboard is open. The NativeActivity surface itself
+          keeps its full size, so the app reads the content rect and keeps
+          the search bar above the keyboard (see src/ui/insets.rs).
+          configChanges: keyboard, size and layout changes are handled
+          in-app instead of recreating the activity (and the GL surface).
+        -->
         <activity
             android:name="android.app.NativeActivity"
             android:label="RISS Launcher"
-            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:configChanges="orientation|keyboard|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
             

@@ -153,6 +153,32 @@ Modify the window size in `src/main.rs`:
 .with_min_inner_size([320.0, 400.0])
 ```
 
+### Window Mode
+Choose *Window mode* under **Settings → Behavior** (`windowed`, `maximized`
+or `fullscreen`), or override it for one run from the command line, e.g. in a
+compositor config:
+
+```bash
+riss_launcher --fullscreen   # also: --maximized, --windowed
+```
+
+### On-Screen Keyboards (Linux)
+Wayland never tells apps where the on-screen keyboard is. KWin, sway (tiled)
+and phoc shrink windowed/maximized windows for it and GNOME slides them up, but
+fullscreen windows get covered, so RISS keeps the bottom free itself while a
+keyboard is up. It knows the keyboard is up from KWin or `sm.puri.OSK0`
+(squeekboard) over D-Bus, or otherwise when you tap the search field on a
+touchscreen.
+
+The keyboard height is measured whenever the compositor shrinks a screen-sized
+RISS window for it (e.g. maximized on KWin), separately for portrait and
+landscape, and reused in fullscreen. Under **Settings → Keyboard** you can
+switch measuring off, set the heights by hand, or set *Keyboard space* to
+`always` (for keyboards RISS cannot detect, such as wvkbd) or `off`.
+
+D-Bus detection is the default `osk-dbus` Cargo feature; build with
+`--no-default-features` to drop it and the `zbus` dependency.
+
 ## Development
 
 ### Project Structure
@@ -180,6 +206,7 @@ riss-launcher/
 - **freedesktop-desktop-entry** - Parse .desktop files
 - **serde/serde_json** - Serialization for history
 - **open** - Cross-platform app launching
+- **zbus** - On-screen keyboard detection over D-Bus (Linux, optional)
 
 ### Building for Release
 

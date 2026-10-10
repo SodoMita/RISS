@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use winit::platform::android::activity::AndroidApp;
 
 use crate::android_app_entry::{AppEntry, IconPixels};
+use crate::ui::insets::WindowGeometry;
 
 /// Global storage for the AndroidApp reference
 static ANDROID_APP: OnceCell<Mutex<AndroidApp>> = OnceCell::new();
@@ -23,6 +24,22 @@ pub fn set_android_app(app: AndroidApp) {
 /// Get the stored AndroidApp
 fn get_android_app() -> Option<std::sync::MutexGuard<'static, AndroidApp>> {
     ANDROID_APP.get().map(|m| m.lock().unwrap())
+}
+
+/// Window size and visible content rect. With `adjustResize` the content
+/// rect shrinks while the keyboard is open; the native window does not.
+pub fn window_geometry() -> Option<WindowGeometry> {
+    let app = get_android_app()?;
+    let window = app.native_window()?;
+    let rect = app.content_rect();
+    Some(WindowGeometry {
+        width: window.width(),
+        height: window.height(),
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+    })
 }
 
 /// App-private storage directory (the `Context.getFilesDir()` equivalent).

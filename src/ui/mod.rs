@@ -10,12 +10,16 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 mod colors;
+pub(crate) mod insets;
+mod osk;
 mod results;
 mod search_bar;
 mod settings;
 mod touch;
+pub(crate) mod window_mode;
 
 use colors::Palette;
+use window_mode::WindowMode;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
@@ -45,13 +49,29 @@ pub struct RissApp {
     touch_start: Option<(egui::Pos2, f64)>,
     last_empty_tap: Option<(egui::Pos2, f64)>,
     startup_notes: Vec<String>,
+    /// Room for on-screen keyboards on Linux desktops.
+    osk: osk::OskTracker,
+    /// Window mode last applied from settings (a command-line override
+    /// stays until the setting changes).
+    window_mode: WindowMode,
 }
 
 impl RissApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let (settings, mut startup_notes) = SettingsData::load();
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let (settings, notes) = SettingsData::load();
+        Self::with_settings(cc, settings, notes)
+    }
+
+    /// Create the app from settings the caller already loaded (the desktop
+    /// entry point needs them to pick the initial window mode).
+    pub fn with_settings(
+        cc: &eframe::CreationContext<'_>,
+        settings: SettingsData,
+        mut startup_notes: Vec<String>,
+    ) -> Self {
         let (history, history_notes) = HistoryData::load();
         startup_notes.extend(history_notes);
+        let window_mode = WindowMode::from_settings(&settings);
         let mut app = Self {
             query: String::new(),
             all_apps: Vec::new(),
@@ -72,7 +92,10 @@ impl RissApp {
             touch_start: None,
             last_empty_tap: None,
             startup_notes,
+            osk: osk::OskTracker::new(&cc.egui_ctx),
+            window_mode,
         };
+        insets::watch(&cc.egui_ctx);
         app.reload_apps();
         app
     }
@@ -296,6 +319,15 @@ impl RissApp {
         }
     }
 
+    /// Follow changes of the `window-mode` setting.
+    fn sync_window_mode(&mut self, ctx: &egui::Context) {
+        let wanted = WindowMode::from_settings(&self.settings);
+        if wanted != self.window_mode {
+            wanted.apply_to_window(ctx);
+            self.window_mode = wanted;
+        }
+    }
+
     fn show_launcher(&mut self, ctx: &egui::Context, p: Palette) {
         let search_height = if self.settings.enabled("large-search-bar") {
             92.0
@@ -321,8 +353,8 @@ impl RissApp {
             0.0
         };
 
-        // Panels are laid out from the window edges, so the search bar stays
-        // above the Android keyboard and pinned to the bottom on every resize.
+        // Panels are laid out inside the insets reserved in `update`, so the
+        // search bar sits right above the keyboard.
         egui::TopBottomPanel::bottom("launcher-search")
             .exact_height(search_height + status_height + 20.0)
             .frame(
@@ -380,6 +412,19 @@ impl eframe::App for RissApp {
             let notes = std::mem::take(&mut self.startup_notes);
             self.set_status(notes.join(" • "));
         }
+        #[cfg(not(target_os = "android"))]
+        self.sync_window_mode(ctx);
+        // Keep clear of the keyboard and system bars before any other layout.
+        let insets = insets::current(ctx);
+        #[cfg(not(target_os = "android"))]
+        let insets = {
+            let (keyboard, measured) = self.osk.update(ctx, &mut self.settings);
+            if measured {
+                self.save_settings();
+            }
+            insets.with_min_bottom(keyboard)
+        };
+        insets.reserve(ctx, p.bg);
         match self.screen {
             Screen::Launcher => self.show_launcher(ctx, p),
             Screen::Settings => self.show_settings(ctx, p),
