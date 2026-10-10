@@ -671,7 +671,7 @@ pub fn icon_button(
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     if response.hovered() {
         let fill = if response.is_pointer_button_down_on() {
-            palette.hover
+            palette.accent
         } else {
             palette.hover
         };
