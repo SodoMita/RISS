@@ -95,7 +95,7 @@ impl SearchEngine {
                 if name_lower == query_lower {
                     return Some(SearchResult {
                         entry: app.clone(),
-                        score: 10000,
+                        score: 10000 + usage_boost(app),
                         match_type: MatchType::Exact,
                         action: ResultAction::Launch,
                     });
@@ -103,7 +103,7 @@ impl SearchEngine {
 
                 // Prefix match on name
                 if name_lower.starts_with(&query_lower) {
-                    let score = 5000 + (100 - name_lower.len() as i64);
+                    let score = 5000 + (100 - name_lower.len() as i64) + usage_boost(app);
                     return Some(SearchResult {
                         entry: app.clone(),
                         score,
@@ -119,7 +119,7 @@ impl SearchEngine {
                 {
                     return Some(SearchResult {
                         entry: app.clone(),
-                        score: 4000,
+                        score: 4000 + usage_boost(app),
                         match_type: MatchType::Prefix,
                         action: ResultAction::Launch,
                     });
@@ -130,7 +130,7 @@ impl SearchEngine {
                     if tag.to_lowercase().starts_with(&query_lower) {
                         return Some(SearchResult {
                             entry: app.clone(),
-                            score: 3000,
+                            score: 3000 + usage_boost(app),
                             match_type: MatchType::Tag,
                             action: ResultAction::Launch,
                         });
@@ -142,7 +142,7 @@ impl SearchEngine {
                     if cat.to_lowercase().starts_with(&query_lower) {
                         return Some(SearchResult {
                             entry: app.clone(),
-                            score: 2000,
+                            score: 2000 + usage_boost(app),
                             match_type: MatchType::Category,
                             action: ResultAction::Launch,
                         });
@@ -152,7 +152,7 @@ impl SearchEngine {
                 // Fuzzy match on searchable text
                 if let Some(score) = self.matcher.fuzzy_match(&searchable, query) {
                     // Boost by launch count
-                    let boosted = score + (app.launch_count as i64 * 10);
+                    let boosted = score + usage_boost(app);
                     return Some(SearchResult {
                         entry: app.clone(),
                         score: boosted,
@@ -205,6 +205,12 @@ impl SearchEngine {
         results.truncate(max_results);
         results
     }
+}
+
+/// Usage boost shared by every match type (issue #21): frequently launched
+/// apps rank higher regardless of how they matched, like KISS.
+fn usage_boost(app: &AppEntry) -> i64 {
+    app.launch_count as i64 * 10
 }
 
 /// The name shown for an app, honoring the user's rename (KISS alias).
@@ -325,15 +331,26 @@ pub fn try_calculate(input: &str) -> Option<String> {
     }
 }
 
-/// Simple recursive descent parser for math expressions
+/// Simple recursive descent parser for math expressions.
+///
+/// The whole input must be one valid expression (issue #23): trailing
+/// garbage such as the `abc` in `2+2abc` rejects the input, so it is treated
+/// as a search query instead of a partial calculation.
 fn evaluate_expression(input: &str) -> Option<f64> {
     let input = input.trim();
     let mut chars = input.chars().peekable();
+
+    fn skip_ws(chars: &mut std::iter::Peekable<std::str::Chars>) {
+        while matches!(chars.peek(), Some(c) if c.is_whitespace()) {
+            chars.next();
+        }
+    }
 
     fn parse_expr(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
         let mut left = parse_term(chars)?;
 
         loop {
+            skip_ws(chars);
             match chars.peek() {
                 Some('+') => {
                     chars.next();
@@ -356,6 +373,7 @@ fn evaluate_expression(input: &str) -> Option<f64> {
         let mut left = parse_power(chars)?;
 
         loop {
+            skip_ws(chars);
             match chars.peek() {
                 Some('*') => {
                     chars.next();
@@ -380,6 +398,7 @@ fn evaluate_expression(input: &str) -> Option<f64> {
     fn parse_power(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
         let base = parse_factor(chars)?;
 
+        skip_ws(chars);
         if chars.peek() == Some(&'^') {
             chars.next();
             let exp = parse_power(chars)?; // Right associative
@@ -390,10 +409,7 @@ fn evaluate_expression(input: &str) -> Option<f64> {
     }
 
     fn parse_factor(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<f64> {
-        // Skip whitespace
-        while chars.peek() == Some(&' ') {
-            chars.next();
-        }
+        skip_ws(chars);
 
         // Handle unary minus
         if chars.peek() == Some(&'-') {
@@ -406,6 +422,7 @@ fn evaluate_expression(input: &str) -> Option<f64> {
         if chars.peek() == Some(&'(') {
             chars.next();
             let val = parse_expr(chars)?;
+            skip_ws(chars);
             if chars.peek() == Some(&')') {
                 chars.next();
                 return Some(val);
@@ -424,10 +441,19 @@ fn evaluate_expression(input: &str) -> Option<f64> {
             }
         }
 
+        if num_str.is_empty() {
+            return None;
+        }
         num_str.parse().ok()
     }
 
-    parse_expr(&mut chars)
+    let value = parse_expr(&mut chars)?;
+    skip_ws(&mut chars);
+    // Anything left over means the input was not just math.
+    if chars.peek().is_some() {
+        return None;
+    }
+    Some(value)
 }
 
 #[cfg(test)]
@@ -464,5 +490,65 @@ mod tests {
             }
         );
         assert_eq!(timer_result(95).entry.name, "Wait 1m 35s");
+    }
+
+    #[test]
+    fn ranking_learns_from_usage_across_match_types() {
+        let engine = SearchEngine::new();
+        let aliases = HashMap::new();
+
+        // Prefix matches: the used app wins (issue #21).
+        let mut used = AppEntry::virtual_entry("Firefox", "browser", "firefox");
+        used.launch_count = 50;
+        let fresh = AppEntry::virtual_entry("Fire Tools", "utils", "fire-tools");
+        let results = engine.search("fire", &[fresh, used], &aliases, 10);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].entry.exec, "firefox");
+        assert_eq!(results[0].match_type, MatchType::Prefix);
+
+        // Exact matches learn too.
+        let mut used_exact = AppEntry::virtual_entry("Terminal", "shell", "term-used");
+        used_exact.launch_count = 30;
+        let fresh_exact = AppEntry::virtual_entry("terminal", "shell", "term-fresh");
+        let results = engine.search("terminal", &[fresh_exact, used_exact], &aliases, 10);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.match_type == MatchType::Exact));
+        assert_eq!(results[0].entry.exec, "term-used");
+
+        // Tag matches learn too.
+        let mut tagged_used = AppEntry::virtual_entry("Alpha", "a", "alpha");
+        tagged_used.tags = vec!["music".to_string()];
+        tagged_used.launch_count = 20;
+        let mut tagged_fresh = AppEntry::virtual_entry("Beta", "b", "beta");
+        tagged_fresh.tags = vec!["music".to_string()];
+        let results = engine.search("mus", &[tagged_fresh, tagged_used], &aliases, 10);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.match_type == MatchType::Tag));
+        assert_eq!(results[0].entry.exec, "alpha");
+
+        // Category matches learn too.
+        let mut cat_used = AppEntry::virtual_entry("Gamma", "g", "gamma");
+        cat_used.categories = vec!["Office".to_string()];
+        cat_used.launch_count = 20;
+        let mut cat_fresh = AppEntry::virtual_entry("Delta", "d", "delta");
+        cat_fresh.categories = vec!["Office".to_string()];
+        let results = engine.search("off", &[cat_fresh, cat_used], &aliases, 10);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.match_type == MatchType::Category));
+        assert_eq!(results[0].entry.exec, "gamma");
+    }
+
+    #[test]
+    fn calculator_consumes_the_whole_input() {
+        // Whitespace between tokens is fine (issue #23).
+        assert_eq!(try_calculate("2 + 2"), Some("= 4".to_string()));
+        assert_eq!(try_calculate("(5 + 3) * 2"), Some("= 16".to_string()));
+        assert_eq!(try_calculate("3 * (2 + 1)"), Some("= 9".to_string()));
+        assert_eq!(try_calculate("  10 / 4  "), Some("= 2.5".to_string()));
+        // Trailing garbage or incomplete input is a query, not math.
+        assert_eq!(try_calculate("2+2abc"), None);
+        assert_eq!(try_calculate("2 + 2 x"), None);
+        assert_eq!(try_calculate("2 +"), None);
+        assert_eq!(try_calculate("(5+3"), None);
     }
 }
