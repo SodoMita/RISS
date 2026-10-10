@@ -42,8 +42,8 @@ impl RissApp {
         let all_apps = self.show_all_apps;
         // All-apps mode copies KISS's "kiss bar" (`main_kissbar.xml` +
         // `rounded_kiss_bar.xml`): solid `?attr/colorPrimary` fill, no
-        // outline, white glyphs. (The ring's filled center is always drawn;
-        // it is our own addition — KISS keeps the ring hollow.)
+        // outline, white glyphs. The ring's center dot is shown only in this
+        // all-apps mode.
         let bar_fill = if all_apps {
             p.accent
         } else if transparent {
@@ -90,8 +90,14 @@ impl RissApp {
                     } else {
                         menu_color
                     };
-                    let left_response =
-                        bar_icon_button(ui, left_icon, left_color, left_tooltip, show_glyph);
+                    let left_response = bar_icon_button(
+                        ui,
+                        left_icon,
+                        left_color,
+                        left_tooltip,
+                        show_glyph,
+                        all_apps,
+                    );
                     if left_response.clicked() {
                         if swap {
                             self.screen = Screen::Settings;
@@ -138,8 +144,14 @@ impl RissApp {
                     } else {
                         menu_color
                     };
-                    let right_response =
-                        bar_icon_button(ui, right_icon, right_color, right_tooltip, show_glyph);
+                    let right_response = bar_icon_button(
+                        ui,
+                        right_icon,
+                        right_color,
+                        right_tooltip,
+                        show_glyph,
+                        all_apps,
+                    );
                     if right_response.clicked() {
                         if !self.query.is_empty() {
                             self.query.clear();
