@@ -92,18 +92,88 @@ impl HistoryData {
         self.last_launched.clear();
     }
 
+    /// Add or remove `exec` from the favorites bar. Returns the new state:
+    /// `true` when it ended up favorited.
     pub fn toggle_favorite(&mut self, exec: &str) -> bool {
-        if let Some(pos) = self.favorites.iter().position(|e| e == exec) {
-            self.favorites.remove(pos);
+        if self.remove_favorite(exec) {
             false
         } else {
-            self.favorites.push(exec.to_string());
+            self.add_favorite(exec);
             true
         }
     }
 
+    /// Append `exec` to the favorites bar unless it is already there.
+    /// Returns `true` when the bar changed. Mirrors KISS'
+    /// `DataHandler.addToFavorites`, which also ignores ids already present.
+    pub fn add_favorite(&mut self, exec: &str) -> bool {
+        if self.is_favorite(exec) {
+            return false;
+        }
+        self.favorites.push(exec.to_string());
+        true
+    }
+
+    /// Take `exec` off the favorites bar. Returns `true` when it was there.
+    /// Mirrors KISS' `DataHandler.removeFromFavorites`.
+    pub fn remove_favorite(&mut self, exec: &str) -> bool {
+        match self.favorites.iter().position(|e| e == exec) {
+            Some(pos) => {
+                self.favorites.remove(pos);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Position of `exec` in the favorites bar, or `None` when it is not a
+    /// favorite. The position is the order the bar is drawn in.
+    pub fn favorite_index(&self, exec: &str) -> Option<usize> {
+        self.favorites.iter().position(|e| e == exec)
+    }
+
+    /// Move a favorite to the slot `to`, clamped to the ends of the bar.
+    /// Returns `true` when the order changed.
+    ///
+    /// Same remove-then-insert rule KISS uses when a favorite is dragged
+    /// (`FavoriteAdapter.moveItem`, persisted through
+    /// `DataHandler.setFavoritePositions`, which clamps the index too).
+    pub fn move_favorite_to(&mut self, exec: &str, to: usize) -> bool {
+        let Some(from) = self.favorite_index(exec) else {
+            return false;
+        };
+        let to = to.min(self.favorites.len().saturating_sub(1));
+        if from == to {
+            return false;
+        }
+        let entry = self.favorites.remove(from);
+        self.favorites.insert(to, entry);
+        true
+    }
+
+    /// Shift a favorite by `delta` slots; negative moves it towards the start
+    /// of the bar. Clamped at both ends, returns `true` when it moved.
+    pub fn move_favorite_by(&mut self, exec: &str, delta: isize) -> bool {
+        let Some(from) = self.favorite_index(exec) else {
+            return false;
+        };
+        let target = from as isize + delta;
+        if target < 0 {
+            return false;
+        }
+        self.move_favorite_to(exec, target as usize)
+    }
+
     pub fn is_favorite(&self, exec: &str) -> bool {
         self.favorites.iter().any(|e| e == exec)
+    }
+
+    /// Empty the favorites bar, returning how many favorites were dropped
+    /// (KISS' `DataHandler.resetFavorites`).
+    pub fn clear_favorites(&mut self) -> usize {
+        let count = self.favorites.len();
+        self.favorites.clear();
+        count
     }
 
     pub fn get_launch_count(&self, exec: &str) -> u32 {
@@ -276,6 +346,122 @@ mod tests {
         assert!(history.last_launched.is_empty());
         assert_eq!(history.favorites, vec!["firefox".to_string()]);
         assert_eq!(history.get_tags("vim"), vec!["editor".to_string()]);
+    }
+
+    /// Three favorites in bar order, as `add_favorite` would have stored them.
+    fn sample_bar() -> HistoryData {
+        let mut history = HistoryData::default();
+        for exec in ["firefox", "vim", "thunderbird"] {
+            history.add_favorite(exec);
+        }
+        history
+    }
+
+    #[test]
+    fn add_favorite_is_idempotent_and_keeps_order() {
+        let mut history = sample_bar();
+        assert!(!history.add_favorite("vim"), "re-adding should be a no-op");
+        assert_eq!(
+            history.favorites,
+            vec![
+                "firefox".to_string(),
+                "vim".to_string(),
+                "thunderbird".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn toggle_favorite_adds_then_removes() {
+        let mut history = HistoryData::default();
+        assert!(history.toggle_favorite("firefox"));
+        assert_eq!(history.favorite_index("firefox"), Some(0));
+        assert!(!history.toggle_favorite("firefox"));
+        assert!(history.favorites.is_empty());
+    }
+
+    #[test]
+    fn remove_favorite_reports_whether_it_was_there() {
+        let mut history = sample_bar();
+        assert!(history.remove_favorite("vim"));
+        assert!(!history.remove_favorite("vim"));
+        assert_eq!(
+            history.favorites,
+            vec!["firefox".to_string(), "thunderbird".to_string()]
+        );
+    }
+
+    #[test]
+    fn favorite_index_is_none_for_unknown_apps() {
+        assert_eq!(sample_bar().favorite_index("ghost"), None);
+    }
+
+    #[test]
+    fn move_favorite_by_shifts_within_the_bar() {
+        let mut history = sample_bar();
+        assert!(history.move_favorite_by("thunderbird", -2));
+        assert_eq!(
+            history.favorites.first().map(String::as_str),
+            Some("thunderbird")
+        );
+        assert!(history.move_favorite_by("thunderbird", 1));
+        assert_eq!(history.favorite_index("thunderbird"), Some(1));
+    }
+
+    #[test]
+    fn move_favorite_by_clamps_at_both_ends() {
+        let mut history = sample_bar();
+        assert!(
+            !history.move_favorite_by("firefox", -1),
+            "already first, nothing to move"
+        );
+        assert_eq!(
+            history.favorites.first().map(String::as_str),
+            Some("firefox")
+        );
+        assert!(
+            history.move_favorite_by("firefox", 99),
+            "large deltas clamp to the last slot"
+        );
+        assert_eq!(history.favorite_index("firefox"), Some(2));
+    }
+
+    #[test]
+    fn move_favorite_to_reorders_and_clamps() {
+        let mut history = sample_bar();
+        assert!(history.move_favorite_to("firefox", 2));
+        assert_eq!(
+            history.favorites,
+            vec![
+                "vim".to_string(),
+                "thunderbird".to_string(),
+                "firefox".to_string()
+            ]
+        );
+        assert!(!history.move_favorite_to("firefox", 2), "already there");
+        assert!(
+            !history.move_favorite_to("firefox", 500),
+            "clamped, no move"
+        );
+        assert!(!history.move_favorite_to("ghost", 0), "not a favorite");
+    }
+
+    #[test]
+    fn moving_unknown_apps_leaves_the_bar_alone() {
+        let mut history = sample_bar();
+        assert!(!history.move_favorite_by("ghost", 1));
+        assert!(!history.move_favorite_to("ghost", 0));
+        assert_eq!(history.favorites.len(), 3);
+    }
+
+    #[test]
+    fn clear_favorites_reports_the_count_and_keeps_usage() {
+        let mut history = sample_bar();
+        history.record_launch_at("vim", NOW);
+        assert_eq!(history.clear_favorites(), 3);
+        assert!(history.favorites.is_empty());
+        assert_eq!(history.get_launch_count("vim"), 1, "usage data survives");
+        assert_eq!(history.clear_favorites(), 0);
     }
 
     #[test]

@@ -193,12 +193,8 @@ impl RissApp {
                 self.reload_apps();
                 self.set_status("History cleared (favorites kept)");
             }
-            "reset-favorites" => {
-                self.history.favorites.clear();
-                self.save_history();
-                self.reload_apps();
-                self.set_status("Favorites cleared");
-            }
+            "manage-favorites" => self.open_favorites_manager(Screen::Settings),
+            "reset-favorites" => self.clear_favorites(),
             "reset-excluded-apps" => {
                 self.settings
                     .values

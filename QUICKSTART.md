@@ -33,9 +33,12 @@ Type math expressions:
 - `(5+3)*2` → Shows `= 16`
 
 ### Managing Favorites
-- Click the star (☆) next to any app to favorite it
-- Favorites appear at the top when search is empty
-- Click again (★) to remove from favorites
+- Long-press (or right-click) any app → **Add to favorites**
+- Favorites appear in the bar above the search field and launch on one tap
+- Long-press a favorite in that bar → **Open**, **Remove favorite**, **Move left**, **Move right**, **Edit tags**, **Manage favorites…**
+- Hold that long-press and drag sideways to reorder the bar (KISS-style); swipe without the long-press to scroll
+- Settings → Favorites → **Manage favorites**: ◀ ▶ reorder, ✕ remove, 🏷 retag, **Clear all favorites**, or type in the search box to add more
+- `Esc` closes the tag editor, then leaves the Manage favorites screen
 
 ### Adding Tags
 - Click the tag icon (🏷️) next to an app

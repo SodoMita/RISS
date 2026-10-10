@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 mod colors;
+mod favorites;
 mod icons;
 mod results;
 mod search_bar;
@@ -17,11 +18,14 @@ mod settings;
 mod touch;
 
 use colors::Palette;
+use favorites::FavDrag;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
     Launcher,
     Settings,
+    /// Ordered list of favorites that can be deleted, reordered and tagged.
+    Favorites,
 }
 
 pub struct RissApp {
@@ -43,6 +47,12 @@ pub struct RissApp {
     editing_tags: Option<String>,
     tag_input: String,
     settings_query: String,
+    /// Query used by the "Manage favorites" screen to find apps to favorite.
+    favorites_query: String,
+    /// Screen the favorites manager returns to when closed.
+    favorites_return: Screen,
+    /// Favorite being dragged along the bar, if any.
+    fav_drag: Option<FavDrag>,
     touch_start: Option<(egui::Pos2, f64)>,
     last_empty_tap: Option<(egui::Pos2, f64)>,
     startup_notes: Vec<String>,
@@ -70,6 +80,9 @@ impl RissApp {
             editing_tags: None,
             tag_input: String::new(),
             settings_query: String::new(),
+            favorites_query: String::new(),
+            favorites_return: Screen::Launcher,
+            fav_drag: None,
             touch_start: None,
             last_empty_tap: None,
             startup_notes,
@@ -272,9 +285,15 @@ impl RissApp {
     }
 
     fn toggle_favorite_exec(&mut self, exec: &str) {
-        self.history.toggle_favorite(exec);
+        let favorited = self.history.toggle_favorite(exec);
+        let name = self.favorite_display_name(exec);
         self.save_history();
         self.reload_apps();
+        self.set_status(if favorited {
+            format!("{name} was added to favorites")
+        } else {
+            format!("{name} was removed from favorites")
+        });
     }
 
     fn set_status(&mut self, text: impl Into<String>) {
@@ -384,6 +403,7 @@ impl eframe::App for RissApp {
         match self.screen {
             Screen::Launcher => self.show_launcher(ctx, p),
             Screen::Settings => self.show_settings(ctx, p),
+            Screen::Favorites => self.show_favorites_screen(ctx, p),
         }
         if self.status_message.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
