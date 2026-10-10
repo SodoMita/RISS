@@ -109,7 +109,6 @@ impl AppEntry {
     pub fn uninstall(&self) -> Result<(), String> {
         let plan = crate::package_managers::plan(self)?;
         crate::package_managers::execute(&plan)
-
     }
 
     /// Open app information

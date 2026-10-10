@@ -767,6 +767,7 @@ pub fn view_in_store_jni(package_name: &str) -> Result<(), String> {
 
     info!("View in store opened for: {}", package_name);
     Ok(())
+}
 
 /// `android.graphics.PixelFormat.TRANSLUCENT`: let the system pick a pixel
 /// format with alpha bits.
