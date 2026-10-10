@@ -4,6 +4,16 @@
 use crate::settings::SettingsData;
 use eframe::egui::{self, ViewportBuilder, ViewportCommand};
 
+/// The one application identifier this program exposes everywhere.
+///
+/// Wayland's `xdg_toplevel.set_app_id`, the `StartupWMClass` of the installed
+/// desktop file and the Android package id all have to agree, or a compositor
+/// cannot match the launcher window to its `.desktop` entry: no icon, no
+/// grouping, and a launcher launched from its own menu appears as a second,
+/// anonymous window. Compositors match the desktop file by *file name*, which is
+/// why `install.sh` installs `com.risslauncher.app.desktop`.
+pub const APP_ID: &str = "com.risslauncher.app";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowMode {
     Windowed,
@@ -49,6 +59,7 @@ impl WindowMode {
     pub fn apply_startup(settings: &SettingsData, builder: ViewportBuilder) -> ViewportBuilder {
         Self::at_startup(settings)
             .apply_to_builder(builder)
+            .with_app_id(APP_ID)
             .with_transparent(super::colors::wallpaper_visible(settings))
     }
 
