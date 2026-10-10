@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 mod colors;
 mod favorites;
+mod fling;
 mod icons;
 pub(crate) mod insets;
 mod osk;
@@ -25,6 +26,11 @@ use colors::Palette;
 use favorites::FavDrag;
 use icons::IconCache;
 use window_mode::WindowMode;
+
+/// A result row asked to activate while `results` was borrowed for painting.
+enum Deferred {
+    Activate(usize),
+}
 
 /// How long the Uninstall action waits for its confirmation click before
 /// the first press expires.
@@ -81,6 +87,14 @@ pub struct RissApp {
     /// "Uninstall" was first pressed. A destructive operation should not
     /// run on a single stray tap.
     pending_uninstall: Option<(String, Instant)>,
+    /// Accumulating wheel fling. Positive increases the scroll offset.
+    fling_velocity: f32,
+    /// Arrow keys moved the highlight; reveal that row in the virtual list.
+    scroll_selection: bool,
+    /// Bumped when `results` is rebuilt, so a paint that took the vec can
+    /// tell a nested reload already installed a fresh one.
+    list_generation: u64,
+    deferred: Vec<Deferred>,
 }
 
 impl RissApp {
@@ -130,7 +144,16 @@ impl RissApp {
             osk: osk::OskTracker::new(&cc.egui_ctx),
             window_mode,
             pending_uninstall: None,
+            fling_velocity: 0.0,
+            scroll_selection: false,
+            list_generation: 0,
+            deferred: Vec::new(),
         };
+        // egui's native default is 40px per wheel line. The result list adds
+        // velocity on top of this; the settings screen just needs to not crawl.
+        cc.egui_ctx.options_mut(|options| {
+            options.input_options.line_scroll_speed = 96.0;
+        });
         insets::watch(&cc.egui_ctx);
         app.reload_apps();
         app
@@ -186,6 +209,7 @@ impl RissApp {
     }
 
     fn update_results(&mut self) {
+        self.list_generation = self.list_generation.wrapping_add(1);
         let limit = self.settings.number("number-of-display-elements", 20);
         if !self.query.trim().is_empty() {
             // "Search excluded apps" lets typed queries find excluded apps;
@@ -530,6 +554,26 @@ impl RissApp {
         self.set_excluded_from_search(entry, excluded);
     }
 
+    /// Stamp usage onto both app lists without walking packages again.
+    ///
+    /// KISS updates the in-memory pojo. `PackageManager` is re-queried only
+    /// from `LauncherApps.Callback`. `reload_apps` here was a full XDG or JNI
+    /// walk on every launch — slower than the Java launcher, and the reason
+    /// `apps` could drift from `all_apps`.
+    fn reapply_usage(&mut self) {
+        for app in &mut self.all_apps {
+            app.launch_count = self.history.get_launch_count(&app.exec);
+            app.last_launched = self.history.get_last_launched(&app.exec);
+            app.is_favorite = self.history.is_favorite(&app.exec);
+        }
+        for app in &mut self.apps {
+            app.launch_count = self.history.get_launch_count(&app.exec);
+            app.last_launched = self.history.get_last_launched(&app.exec);
+            app.is_favorite = self.history.is_favorite(&app.exec);
+        }
+        self.update_results();
+    }
+
     fn launch_exec(&mut self, exec: &str) {
         // Search the full list so excluded apps reached through search can
         // still be launched.
@@ -549,7 +593,7 @@ impl RissApp {
                 self.query.clear();
                 self.show_all_apps = false;
                 self.show_hidden = false;
-                self.reload_apps();
+                self.reapply_usage();
                 self.set_status(format!("Opened {}", name));
             }
             Err(error) => self.set_status(error),
@@ -672,7 +716,7 @@ impl RissApp {
         let favorited = self.history.toggle_favorite(exec);
         let name = self.favorite_display_name(exec);
         self.save_history();
-        self.reload_apps();
+        self.reapply_usage();
         self.set_status(if favorited {
             format!("{name} was added to favorites")
         } else {
@@ -795,9 +839,9 @@ impl RissApp {
                     .inner_margin(egui::Margin::same(10)),
             )
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| self.show_results(ui, p));
+                // One scroll area, owned by the result list, so wheel ticks
+                // can accumulate instead of being eaten by a parent scroller.
+                self.show_results(ui, p);
             });
     }
 }
@@ -846,7 +890,7 @@ impl eframe::App for RissApp {
             Screen::Favorites => self.show_favorites_screen(ctx, p),
         }
         // Rows that missed the icon decode budget ask for one more pass.
-        if self.icons.take_pending() {
+        if self.icons.take_pending() || self.fling_velocity.abs() > 1.0 {
             ctx.request_repaint();
         }
         if self.status_message.is_some() {
