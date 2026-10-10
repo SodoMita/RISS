@@ -392,10 +392,12 @@ impl RissApp {
         let follow_selection = self.list_follow_selection;
         let mut actions: Vec<RowAction> = Vec::new();
 
+        // egui's default `ScrollSource` already includes `drag`, so dragging
+        // the rows themselves scrolls the list: that is the flick a launcher
+        // needs, and it is no longer intercepted by the gesture surface below.
         let mut area = egui::ScrollArea::vertical()
             .id_salt("results")
-            .auto_shrink([false, false])
-            .drag_to_scroll(true);
+            .auto_shrink([false, false]);
         if self.list_scroll_to_top {
             // A new query or a new list (all apps vs. history) starts at the
             // top: the saved offset belongs to the list that is gone now.
