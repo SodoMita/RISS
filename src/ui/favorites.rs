@@ -442,9 +442,9 @@ impl RissApp {
             ui.label(RichText::new(hint).size(11.0).color(p.dim));
             return;
         }
-        let matches =
-            self.search_engine
-                .search(&query, &self.apps, &self.history.aliases, 12);
+        let matches = self
+            .search_engine
+            .search(&query, &self.apps, &self.history.aliases, 12);
         if matches.is_empty() {
             let text = format!("No app matches “{query}”");
             let note = RichText::new(text).size(11.0).color(p.dim);
