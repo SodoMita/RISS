@@ -87,7 +87,7 @@ pub struct RissApp {
     /// "Uninstall" was first pressed. A destructive operation should not
     /// run on a single stray tap.
     pending_uninstall: Option<(String, Instant)>,
- /// Accumulating wheel fling. Positive increases the scroll offset.
+    /// Accumulating wheel fling. Positive increases the scroll offset.
     fling_velocity: f32,
     /// Arrow keys moved the highlight; reveal that row in the virtual list.
     scroll_selection: bool,
@@ -146,7 +146,7 @@ impl RissApp {
             osk: osk::OskTracker::new(&cc.egui_ctx),
             window_mode,
             pending_uninstall: None,
-         fling_velocity: 0.0,
+            fling_velocity: 0.0,
             scroll_selection: false,
             list_generation: 0,
             deferred: Vec::new(),
