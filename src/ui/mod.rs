@@ -50,6 +50,8 @@ pub struct RissApp {
     tag_input: String,
     editing_alias: Option<String>,
     alias_input: String,
+    editing_icon: Option<String>,
+    icon_input: String,
     settings_query: String,
     /// Query used by the "Manage favorites" screen to find apps to favorite.
     favorites_query: String,
@@ -88,6 +90,8 @@ impl RissApp {
             tag_input: String::new(),
             editing_alias: None,
             alias_input: String::new(),
+            editing_icon: None,
+            icon_input: String::new(),
             settings_query: String::new(),
             favorites_query: String::new(),
             favorites_return: Screen::Launcher,
@@ -118,6 +122,12 @@ impl RissApp {
             let custom = self.history.get_tags(&app.exec);
             if !custom.is_empty() {
                 app.tags = custom;
+            }
+            if let Some(alias) = self.history.alias(&app.exec) {
+                app.name = alias.clone();
+            }
+            if let Some(custom_icon) = self.history.custom_icon(&app.exec) {
+                app.icon = custom_icon.clone();
             }
         }
         self.all_apps = apps;
@@ -454,6 +464,15 @@ impl RissApp {
             items.join(","),
         );
         self.save_settings();
+    }
+
+    fn is_excluded_app(&self, entry: &AppEntry) -> bool {
+        self.is_excluded_from_search(entry)
+    }
+
+    /// Add or remove an app from the `edit-excluded-apps` list.
+    fn set_excluded_app(&mut self, entry: &AppEntry, excluded: bool) {
+        self.set_excluded_from_search(entry, excluded);
     }
 
     fn launch_exec(&mut self, exec: &str) {
