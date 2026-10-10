@@ -1,6 +1,7 @@
 // RISS Launcher - Android entry point
 // Uses eframe 0.32+ official Android support
 #![allow(dead_code)]
+pub mod kiss_v2;
 
 #[cfg(target_os = "android")]
 mod android_app_entry;
