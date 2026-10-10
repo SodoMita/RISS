@@ -1,11 +1,11 @@
+use crate::storage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Persistent history and favorites data
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct HistoryData {
     /// Map from app exec command to launch count
     pub launch_counts: HashMap<String, u32>,
@@ -17,56 +17,79 @@ pub struct HistoryData {
     pub tags: HashMap<String, Vec<String>>,
 }
 
+/// How the default (no-query) history list is ordered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryMode {
+    /// Most recently launched first.
+    Recency,
+    /// Most launched first.
+    Frequency,
+    /// Launch count decayed exponentially by age, so often-used apps drift
+    /// down when they stop being used (KISS-style adaptive ranking).
+    Frecent,
+    /// Name order. No score is involved; the caller sorts by name.
+    Alphabetical,
+}
+
+impl HistoryMode {
+    /// Parse the `history-mode` setting value; unknown values fall back to
+    /// recency.
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "frequency" => Self::Frequency,
+            "frecent" => Self::Frecent,
+            "alphabetical" => Self::Alphabetical,
+            _ => Self::Recency,
+        }
+    }
+}
+
+/// Half-life used by [`HistoryMode::Frecent`], in seconds (two weeks).
+const FRECENT_HALF_LIFE_SECS: f64 = 14.0 * 24.0 * 3600.0;
+
 impl HistoryData {
-    fn data_path() -> PathBuf {
-        #[cfg(target_os = "android")]
-        {
-            // On Android, use the app's internal storage directory
-            // This would typically be obtained from the Android context
-            // For now, use a relative path that should work
-            PathBuf::from("history.json")
-        }
-
-        #[cfg(not(target_os = "android"))]
-        {
-            let mut path = if let Ok(home) = std::env::var("HOME") {
-                PathBuf::from(home)
-            } else {
-                PathBuf::from(".")
-            };
-            path.push(".config");
-            path.push("riss-launcher");
-            fs::create_dir_all(&path).ok();
-            path.push("history.json");
-            path
-        }
+    /// Load history, returning the data plus human-readable notes about any
+    /// storage problems that were recovered from.
+    pub fn load() -> (Self, Vec<String>) {
+        storage::load::<Self>(storage::HISTORY_FILE)
+            .into_value(storage::HISTORY_FILE, Self::default())
     }
 
-    pub fn load() -> Self {
-        let path = Self::data_path();
-        if let Ok(data) = fs::read_to_string(&path) {
-            serde_json::from_str(&data).unwrap_or_default()
-        } else {
-            Self::default()
-        }
+    pub fn save(&self) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        storage::save(storage::HISTORY_FILE, &json)
     }
 
-    pub fn save(&self) {
-        let path = Self::data_path();
-        if let Ok(data) = serde_json::to_string_pretty(self) {
-            fs::write(path, data).ok();
-        }
+    /// Current unix timestamp in seconds.
+    pub fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0)
     }
 
     pub fn record_launch(&mut self, exec: &str) {
+        self.record_launch_at(exec, Self::now_secs());
+    }
+
+    /// Deterministic variant of [`Self::record_launch`] for tests.
+    pub fn record_launch_at(&mut self, exec: &str, now: u64) {
         let count = self.launch_counts.entry(exec.to_string()).or_insert(0);
         *count += 1;
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
         self.last_launched.insert(exec.to_string(), now);
+    }
+
+    /// Forget usage statistics for one app (KISS' "reset rank"), keeping
+    /// favorites and tags intact.
+    pub fn reset_rank(&mut self, exec: &str) {
+        self.launch_counts.remove(exec);
+        self.last_launched.remove(exec);
+    }
+
+    /// Clear usage history while preserving favorites and tags.
+    pub fn clear_history(&mut self) {
+        self.launch_counts.clear();
+        self.last_launched.clear();
     }
 
     pub fn toggle_favorite(&mut self, exec: &str) -> bool {
@@ -103,6 +126,32 @@ impl HistoryData {
         }
     }
 
+    /// Ordering score for one app under `mode` at time `now`. Higher sorts
+    /// first; ties are expected to be broken by name in the caller.
+    pub fn rank_score(&self, mode: HistoryMode, exec: &str, now: u64) -> f64 {
+        let count = self.get_launch_count(exec);
+        let last = self.get_last_launched(exec);
+        match mode {
+            HistoryMode::Recency => {
+                if count == 0 {
+                    0.0
+                } else {
+                    last as f64
+                }
+            }
+            HistoryMode::Frequency => f64::from(count),
+            HistoryMode::Frecent => {
+                if count == 0 {
+                    0.0
+                } else {
+                    let age = (now.saturating_sub(last)) as f64;
+                    f64::from(count) * 2.0_f64.powf(-age / FRECENT_HALF_LIFE_SECS)
+                }
+            }
+            HistoryMode::Alphabetical => 0.0,
+        }
+    }
+
     /// Get top N most frequently used apps
     pub fn top_apps(&self, n: usize) -> Vec<(String, u32)> {
         let mut counts: Vec<(String, u32)> = self
@@ -114,5 +163,150 @@ impl HistoryData {
         counts.sort_by_key(|a| std::cmp::Reverse(a.1));
         counts.truncate(n);
         counts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: u64 = 4_000_000;
+
+    fn sample_history() -> HistoryData {
+        let mut history = HistoryData::default();
+        // Used heavily, but more than a month ago.
+        history.launch_counts.insert("heavy".to_string(), 10);
+        history
+            .last_launched
+            .insert("heavy".to_string(), NOW - 40 * 24 * 3600);
+        // Used twice, an hour ago.
+        history.launch_counts.insert("recent".to_string(), 2);
+        history
+            .last_launched
+            .insert("recent".to_string(), NOW - 3600);
+        history
+    }
+
+    #[test]
+    fn recency_orders_by_last_launch() {
+        let history = sample_history();
+        let recent = history.rank_score(HistoryMode::Recency, "recent", NOW);
+        let heavy = history.rank_score(HistoryMode::Recency, "heavy", NOW);
+        assert!(recent > heavy, "recent {recent} should beat heavy {heavy}");
+    }
+
+    #[test]
+    fn frequency_orders_by_launch_count() {
+        let history = sample_history();
+        let recent = history.rank_score(HistoryMode::Frequency, "recent", NOW);
+        let heavy = history.rank_score(HistoryMode::Frequency, "heavy", NOW);
+        assert!(heavy > recent, "heavy {heavy} should beat recent {recent}");
+    }
+
+    #[test]
+    fn frecent_prefers_recent_usage_over_old_volume() {
+        let history = sample_history();
+        let recent = history.rank_score(HistoryMode::Frecent, "recent", NOW);
+        let heavy = history.rank_score(HistoryMode::Frecent, "heavy", NOW);
+        assert!(
+            recent > heavy,
+            "fresh usage {recent} should beat stale volume {heavy}"
+        );
+    }
+
+    #[test]
+    fn frecent_decay_is_monotonic_in_age() {
+        let mut history = HistoryData::default();
+        history.launch_counts.insert("app".to_string(), 5);
+        history.last_launched.insert("app".to_string(), NOW - 60);
+        let fresh = history.rank_score(HistoryMode::Frecent, "app", NOW);
+        history
+            .last_launched
+            .insert("app".to_string(), NOW - 30 * 24 * 3600);
+        let stale = history.rank_score(HistoryMode::Frecent, "app", NOW);
+        assert!(fresh > stale, "fresh {fresh} should beat stale {stale}");
+    }
+
+    #[test]
+    fn never_launched_apps_score_zero() {
+        let history = HistoryData::default();
+        for mode in [
+            HistoryMode::Recency,
+            HistoryMode::Frequency,
+            HistoryMode::Frecent,
+        ] {
+            assert_eq!(history.rank_score(mode, "ghost", NOW), 0.0);
+        }
+    }
+
+    #[test]
+    fn history_mode_from_key() {
+        assert_eq!(HistoryMode::from_key("frequency"), HistoryMode::Frequency);
+        assert_eq!(HistoryMode::from_key("frecent"), HistoryMode::Frecent);
+        assert_eq!(
+            HistoryMode::from_key("alphabetical"),
+            HistoryMode::Alphabetical
+        );
+        assert_eq!(HistoryMode::from_key("recency"), HistoryMode::Recency);
+        assert_eq!(HistoryMode::from_key("bogus"), HistoryMode::Recency);
+    }
+
+    #[test]
+    fn reset_rank_keeps_favorites_and_tags() {
+        let mut history = HistoryData::default();
+        history.record_launch_at("firefox", NOW);
+        history.toggle_favorite("firefox");
+        history.set_tags("firefox", vec!["web".to_string()]);
+        history.reset_rank("firefox");
+        assert_eq!(history.get_launch_count("firefox"), 0);
+        assert_eq!(history.get_last_launched("firefox"), 0);
+        assert!(history.is_favorite("firefox"));
+        assert_eq!(history.get_tags("firefox"), vec!["web".to_string()]);
+    }
+
+    #[test]
+    fn clear_history_keeps_favorites_and_tags() {
+        let mut history = HistoryData::default();
+        history.record_launch_at("firefox", NOW);
+        history.record_launch_at("vim", NOW);
+        history.toggle_favorite("firefox");
+        history.set_tags("vim", vec!["editor".to_string()]);
+        history.clear_history();
+        assert!(history.launch_counts.is_empty());
+        assert!(history.last_launched.is_empty());
+        assert_eq!(history.favorites, vec!["firefox".to_string()]);
+        assert_eq!(history.get_tags("vim"), vec!["editor".to_string()]);
+    }
+
+    #[test]
+    fn record_launch_updates_count_and_timestamp() {
+        let mut history = HistoryData::default();
+        history.record_launch_at("app", NOW);
+        history.record_launch_at("app", NOW + 10);
+        assert_eq!(history.get_launch_count("app"), 2);
+        assert_eq!(history.get_last_launched("app"), NOW + 10);
+    }
+
+    #[test]
+    fn serde_roundtrip_preserves_everything() {
+        let mut history = HistoryData::default();
+        history.record_launch_at("app", NOW);
+        history.toggle_favorite("app");
+        history.set_tags("app", vec!["a".to_string()]);
+        let json = serde_json::to_string(&history).unwrap();
+        let parsed: HistoryData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.get_launch_count("app"), 1);
+        assert!(parsed.is_favorite("app"));
+        assert_eq!(parsed.get_tags("app"), vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn files_from_older_versions_still_load() {
+        let old = r#"{"launch_counts":{"app":3},"last_launched":{"app":123}}"#;
+        let parsed: HistoryData = serde_json::from_str(old).unwrap();
+        assert_eq!(parsed.get_launch_count("app"), 3);
+        assert_eq!(parsed.get_last_launched("app"), 123);
+        assert!(parsed.favorites.is_empty());
+        assert!(parsed.tags.is_empty());
     }
 }

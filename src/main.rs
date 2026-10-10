@@ -10,6 +10,7 @@ mod app_entry;
 mod history;
 mod search;
 mod settings;
+mod storage;
 mod ui;
 
 #[cfg(not(target_os = "android"))]
