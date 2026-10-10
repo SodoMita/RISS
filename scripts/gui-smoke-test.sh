@@ -59,7 +59,7 @@ case "$MODE" in
         command -v import >/dev/null || fail "imagemagick import missing"
         xvfb-run -a -s "-screen 0 1280x720x24" \
             bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "import -display \$DISPLAY -window root" \
-            || exit 1
+            2>>"$LOG" || fail "Xvfb session failed (see log)"
         ;;
     wayland)
         command -v cage >/dev/null || fail "cage missing (apt install cage)"
@@ -70,7 +70,7 @@ case "$MODE" in
             WLR_LIBINPUT_NO_DEVICES=1 \
             WLR_RENDERER_ALLOW_SOFTWARE=1 \
             cage bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
-            || exit 1
+            2>>"$LOG" || fail "cage session failed (see log)"
         ;;
     --run-child)
         # Internal: runs inside xvfb-run/cage. $2 bin, $3 log, $4 shot, $5 cmd.
