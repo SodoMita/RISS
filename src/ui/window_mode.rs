@@ -39,6 +39,19 @@ impl WindowMode {
             .with_fullscreen(self == Self::Fullscreen)
     }
 
+    /// The whole startup viewport policy, so every entry point opens the window
+    /// the same way: window mode first, then an alpha-capable surface when the
+    /// wallpaper is meant to show through the launcher.
+    ///
+    /// Transparency is fixed when the window is created (winit picks the visual /
+    /// framebuffer config once), so changing `theme` needs a restart — the
+    /// panels themselves do follow the setting live.
+    pub fn apply_startup(settings: &SettingsData, builder: ViewportBuilder) -> ViewportBuilder {
+        Self::at_startup(settings)
+            .apply_to_builder(builder)
+            .with_transparent(super::colors::wallpaper_visible(settings))
+    }
+
     pub fn apply_to_window(self, ctx: &egui::Context) {
         // Leave fullscreen first so a maximize request is not swallowed.
         ctx.send_viewport_cmd(ViewportCommand::Fullscreen(self == Self::Fullscreen));
