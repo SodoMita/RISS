@@ -83,6 +83,22 @@ impl AppEntry {
         }
     }
 
+    /// Whether the Uninstall action can do anything for this entry.
+    pub fn can_uninstall(&self) -> bool {
+        !self.is_system
+    }
+
+    /// Describe what Uninstall would do, without running anything.
+    pub fn uninstall_preview(&self) -> Result<String, String> {
+        if self.is_system {
+            return Err(format!(
+                "{} is a system app and cannot be uninstalled",
+                self.name
+            ));
+        }
+        Ok(format!("Opens Android's uninstaller for {}", self.name))
+    }
+
     pub fn open_app_info(&self) -> Result<(), String> {
         #[cfg(target_os = "android")]
         {

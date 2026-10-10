@@ -84,23 +84,31 @@ impl AppEntry {
             .map_err(|e| format!("Failed to launch {}: {}", self.name, e))
     }
 
-    /// Attempt to uninstall the application
+    /// Whether the Uninstall action can do anything for this entry.
+    ///
+    /// Virtual entries have nothing to uninstall; for real apps the
+    /// feasibility is decided when the responsible package manager is
+    /// resolved.
+    pub fn can_uninstall(&self) -> bool {
+        !self.is_virtual()
+    }
+
+    /// Describe what Uninstall would do, without running anything.
+    ///
+    /// Resolves the package manager that installed the app so the
+    /// confirmation prompt can show the exact removal command.
+    pub fn uninstall_preview(&self) -> Result<String, String> {
+        crate::package_managers::plan(self).map(|plan| plan.summary)
+    }
+
+    /// Uninstall the application through the package manager that installed
+    /// it: Flatpak and Snap apps go through their own tools, AppImage
+    /// binaries and hand-placed desktop files are deleted directly, and
+    /// distro packages are removed with the native package manager,
+    /// escalating through `pkexec` or `sudo` as needed.
     pub fn uninstall(&self) -> Result<(), String> {
-        if self.is_system {
-            return Err(format!(
-                "{} is a system app and cannot be uninstalled",
-                self.name
-            ));
-        }
-        if self.desktop_file.is_file() {
-            if let Ok(metadata) = fs::metadata(&self.desktop_file) {
-                if !metadata.permissions().readonly() && fs::remove_file(&self.desktop_file).is_ok()
-                {
-                    return Ok(());
-                }
-            }
-        }
-        Err(format!("Cannot automatically uninstall {}", self.name))
+        let plan = crate::package_managers::plan(self)?;
+        crate::package_managers::execute(&plan)
     }
 
     /// Open app information
