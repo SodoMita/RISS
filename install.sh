@@ -7,7 +7,9 @@ set -e
 INSTALL_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
 BINARY="target/release/riss_launcher"
-DESKTOP="riss-launcher.desktop"
+# Named after the app id (see `window_mode::APP_ID`): Wayland compositors match a
+# window to its desktop entry by file name, so `riss-launcher.desktop` never matched.
+DESKTOP="com.risslauncher.app.desktop"
 
 echo "⚡ RISS Launcher Installer"
 echo "========================="
@@ -54,4 +56,4 @@ echo "  • Set it as your default launcher (if your DE supports it)"
 echo ""
 echo "To uninstall:"
 echo "  rm $INSTALL_DIR/riss_launcher"
-echo "  rm $APP_DIR/riss-launcher.desktop"
+echo "  rm $APP_DIR/com.risslauncher.app.desktop"
