@@ -208,13 +208,117 @@ impl RissApp {
             });
             return;
         }
-        let results = self.results.clone();
-        for (index, result) in results.iter().enumerate() {
-            self.show_result(ui, index, result, p);
+        let editing = self.editing_tags.is_some()
+            || self.editing_alias.is_some()
+            || self.editing_icon.is_some();
+        if editing {
+            egui::ScrollArea::vertical()
+                .id_salt("kiss-results")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let results = self.results.clone();
+                    for (index, result) in results.iter().enumerate() {
+                        self.show_result(ui, index, result, p);
+                    }
+                    self.gesture_below_rows(ui);
+                });
+            self.drain_deferred();
+            return;
         }
 
-        // Keep gestures on unused space only. The result rows themselves stay
-        // entirely available to scrolling and taps.
+        // KISS binds only the visible children of its ListView. IconCache
+        // already stops a flick from decoding every PNG; this stops the flick
+        // from *building* every row. That second half is the scroll latency.
+        let row_height = self.result_row_pitch();
+        let total = self.results.len();
+        self.reveal_selection(ui, row_height);
+        let generation = self.list_generation;
+        let results = std::mem::take(&mut self.results);
+        let output = egui::ScrollArea::vertical()
+            .id_salt("kiss-results")
+            .auto_shrink([false, false])
+            .scroll_source(egui::containers::scroll_area::ScrollSource {
+                scroll_bar: true,
+                drag: true,
+                mouse_wheel: false,
+            })
+            .show_rows(ui, row_height, total, |ui, range| {
+                for index in range {
+                    let width = ui.available_width();
+                    ui.allocate_ui(Vec2::new(width, row_height), |ui| {
+                        self.show_result(ui, index, &results[index], p);
+                    });
+                }
+            });
+        if self.list_generation == generation {
+            self.results = results;
+        }
+        self.drive_wheel_fling(ui, output.inner_rect);
+        self.gesture_band(ui, output.inner_rect, row_height, total);
+        self.drain_deferred();
+    }
+
+    fn result_row_pitch(&self) -> f32 {
+        let mut height = match self.settings.value("results-size") {
+            "small" => 56.0,
+            "large" => 88.0,
+            _ => 72.0,
+        };
+        if self.settings.enabled("subicon-visible") {
+            height += 16.0;
+        }
+        if self.settings.enabled("tags-visible") {
+            height += 16.0;
+        }
+        height
+    }
+
+    fn reveal_selection(&mut self, ui: &mut egui::Ui, row_height: f32) {
+        if !self.scroll_selection {
+            return;
+        }
+        self.scroll_selection = false;
+        let id = ui.make_persistent_id(egui::Id::new("kiss-results"));
+        let Some(mut state) = egui::containers::scroll_area::State::load(ui.ctx(), id) else {
+            return;
+        };
+        let pitch = row_height + ui.spacing().item_spacing.y;
+        let row_y = self.selected_index as f32 * pitch;
+        let view_h = ui.available_height().max(pitch);
+        if row_y < state.offset.y {
+            state.offset.y = (row_y - pitch).max(0.0);
+        } else if row_y + row_height > state.offset.y + view_h {
+            state.offset.y = (row_y + row_height + pitch - view_h).max(0.0);
+        }
+        state.store(ui.ctx(), id);
+    }
+
+    fn drive_wheel_fling(&mut self, ui: &mut egui::Ui, list_rect: egui::Rect) {
+        use super::fling::{absorb_fling, step_fling, wheel_gesture};
+        let id = ui.make_persistent_id(egui::Id::new("kiss-results"));
+        if ui.rect_contains_pointer(list_rect) {
+            let delta_y = ui.input(|input| input.smooth_scroll_delta.y);
+            if delta_y != 0.0 {
+                self.fling_velocity = absorb_fling(self.fling_velocity, wheel_gesture(delta_y));
+                ui.input_mut(|input| {
+                    input.smooth_scroll_delta = egui::Vec2::ZERO;
+                });
+            }
+        }
+        let dt = ui.input(|input| input.stable_dt);
+        let (velocity, delta) = step_fling(self.fling_velocity, dt);
+        self.fling_velocity = velocity;
+        if delta == 0.0 {
+            return;
+        }
+        if let Some(mut state) = egui::containers::scroll_area::State::load(ui.ctx(), id) {
+            state.offset.y = (state.offset.y + delta).max(0.0);
+            state.store(ui.ctx(), id);
+            ui.ctx().request_repaint();
+        }
+    }
+
+    fn gesture_below_rows(&mut self, ui: &mut egui::Ui) {
         let empty_rect = ui.available_rect_before_wrap();
         if empty_rect.is_positive() {
             let response = ui.interact(
@@ -223,6 +327,40 @@ impl RissApp {
                 Sense::click_and_drag(),
             );
             self.handle_empty_area_gestures(&response, ui.ctx());
+        }
+    }
+
+    fn gesture_band(
+        &mut self,
+        ui: &mut egui::Ui,
+        list_rect: egui::Rect,
+        row_height: f32,
+        total: usize,
+    ) {
+        let spacing = ui.spacing().item_spacing.y;
+        let content_h = (row_height + spacing) * total as f32;
+        if list_rect.height() <= content_h + 8.0 {
+            return;
+        }
+        let mut band = list_rect;
+        band.min.y += content_h;
+        if !band.is_positive() {
+            return;
+        }
+        let response = ui.interact(
+            band,
+            egui::Id::new("empty-results-gestures"),
+            Sense::click_and_drag(),
+        );
+        self.handle_empty_area_gestures(&response, ui.ctx());
+    }
+
+    fn drain_deferred(&mut self) {
+        let deferred = std::mem::take(&mut self.deferred);
+        for action in deferred {
+            match action {
+                super::Deferred::Activate(index) => self.activate(index),
+            }
         }
     }
 
@@ -373,7 +511,9 @@ impl RissApp {
         };
         if response.clicked() {
             self.selected_index = index;
-            self.activate(index);
+            // `activate` reads `self.results`, which the virtual list has
+            // taken for the duration of the paint.
+            self.deferred.push(super::Deferred::Activate(index));
         }
         if response.hovered() {
             self.selected_index = index;
@@ -533,7 +673,7 @@ impl RissApp {
             }
         }
         if launch {
-            self.activate(index);
+            self.deferred.push(super::Deferred::Activate(index));
         }
         if toggle {
             self.toggle_favorite_exec(&result.entry.exec);
@@ -626,7 +766,7 @@ impl RissApp {
             let exec = result.entry.exec.clone();
             self.history.reset_rank(&exec);
             self.save_history();
-            self.reload_apps();
+            self.reapply_usage();
             self.set_status("Usage rank reset");
         }
         if copy_name {
