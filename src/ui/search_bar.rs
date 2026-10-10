@@ -51,42 +51,59 @@ impl RissApp {
             5
         };
         let transparent = self.settings.enabled("transparent-search");
+        let all_apps = self.show_all_apps;
+        // All-apps mode copies KISS's "kiss bar" (`main_kissbar.xml` +
+        // `rounded_kiss_bar.xml`): solid `?attr/colorPrimary` fill, no
+        // outline, white glyphs. (The ring's filled center is always drawn;
+        // it is our own addition — KISS keeps the ring hollow.)
+        let bar_fill = if all_apps {
+            p.accent
+        } else if transparent {
+            Color32::TRANSPARENT
+        } else {
+            p.surface
+        };
+        let border = if all_apps {
+            Color32::TRANSPARENT
+        } else {
+            p.border
+        };
         egui::Frame::NONE
-            .fill(if transparent {
-                Color32::TRANSPARENT
-            } else {
-                p.surface
-            })
+            .fill(bar_fill)
             .corner_radius(CornerRadius::same(rounded))
-            .stroke(Stroke::new(1.0_f32, p.border))
+            .stroke(Stroke::new(1.0_f32, border))
             .inner_margin(egui::Margin::symmetric(8, 5))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     // KISS layout (`main.xml` + `InterfaceTweaks`): the
-                    // launcher circle is always accent-tinted; menu/clear use
+                    // launcher circle is accent-tinted; settings/clear use
                     // the search (text) color, or the accent color when the
-                    // search bar is transparent.
+                    // search bar is transparent. All-apps mode overrides all
+                    // of it with the white-on-accent "kiss bar" palette.
                     let swap = self.settings.enabled("pref-swap-kiss-button-with-menu");
                     let show_glyph = !self.settings.enabled("pref-hide-circle");
-                    let menu_color = if transparent { p.accent } else { p.text };
-                    let (left_icon, left_tooltip) = if swap {
-                        (BarIcon::Menu, "Settings")
+                    let kiss_color = if all_apps { Color32::WHITE } else { p.accent };
+                    let menu_color = if all_apps {
+                        Color32::WHITE
+                    } else if transparent {
+                        p.accent
                     } else {
-                        (BarIcon::Kiss, "All apps")
+                        p.text
+                    };
+                    let kiss_tooltip = if all_apps { "History" } else { "All apps" };
+                    let kiss = (BarIcon::Kiss, kiss_tooltip);
+                    let (left_icon, left_tooltip) = if swap {
+                        (BarIcon::Cog, "Settings")
+                    } else {
+                        kiss
                     };
                     let left_color = if left_icon == BarIcon::Kiss {
-                        p.accent
+                        kiss_color
                     } else {
                         menu_color
                     };
-                    let left_response = bar_icon_button(
-                        ui,
-                        left_icon,
-                        left_color,
-                        p.hover,
-                        left_tooltip,
-                        show_glyph,
-                    );
+                    let left_response =
+                        bar_icon_button(ui, left_icon, left_color, left_tooltip, show_glyph);
                     if left_response.clicked() {
                         if swap {
                             self.screen = Screen::Settings;
@@ -101,6 +118,11 @@ impl RissApp {
                     } else {
                         "Search…"
                     };
+                    // White typed text and hint on the accent-filled bar
+                    // (`weak_text_color` derives from this override too).
+                    if all_apps {
+                        ui.visuals_mut().override_text_color = Some(Color32::WHITE);
+                    }
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut self.query)
                             .id(egui::Id::new("riss-search"))
@@ -114,28 +136,22 @@ impl RissApp {
                         self.show_hidden = false;
                         self.update_results();
                     }
-                    // KISS swaps the menu button for a clear (X) button while
-                    // a query is typed.
+                    // KISS swaps the settings button for a clear (X) button
+                    // while a query is typed.
                     let (right_icon, right_tooltip) = if !self.query.is_empty() {
                         (BarIcon::Clear, "Clear")
                     } else if swap {
-                        (BarIcon::Kiss, "All apps")
+                        kiss
                     } else {
-                        (BarIcon::Menu, "Settings")
+                        (BarIcon::Cog, "Settings")
                     };
                     let right_color = if right_icon == BarIcon::Kiss {
-                        p.accent
+                        kiss_color
                     } else {
                         menu_color
                     };
-                    let right_response = bar_icon_button(
-                        ui,
-                        right_icon,
-                        right_color,
-                        p.hover,
-                        right_tooltip,
-                        show_glyph,
-                    );
+                    let right_response =
+                        bar_icon_button(ui, right_icon, right_color, right_tooltip, show_glyph);
                     if right_response.clicked() {
                         if !self.query.is_empty() {
                             self.query.clear();
