@@ -170,4 +170,23 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn hide_circle_setting_only_affects_kiss_icon() {
+        let hide_circle = true;
+        let kiss_glyph = BarIcon::Kiss != BarIcon::Kiss || !hide_circle;
+        let cog_glyph = BarIcon::Cog != BarIcon::Kiss || !hide_circle;
+        let clear_glyph = BarIcon::Clear != BarIcon::Kiss || !hide_circle;
+        assert!(
+            !kiss_glyph,
+            "KISS icon should be hidden when hide-circle is true"
+        );
+        assert!(
+            cog_glyph,
+            "Cog icon should remain visible when hide-circle is true"
+        );
+        assert!(
+            clear_glyph,
+            "Clear icon should remain visible when hide-circle is true"
+        );
+    }
 }
