@@ -24,7 +24,7 @@ impl RissApp {
             self.selected_index = (self.selected_index + 1).min(self.results.len() - 1);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !self.results.is_empty() {
-            self.launch_result(self.selected_index);
+            self.activate(self.selected_index);
         }
     }
 
