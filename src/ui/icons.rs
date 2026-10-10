@@ -4,10 +4,9 @@ use eframe::egui::{self, Color32, Pos2, Shape, Stroke, Vec2};
 /// deliberate deviation: the settings button is a cog, not KISS's kebab
 /// (`dots.xml`).
 ///
-/// * `Kiss` — the ring from `ic_launcher_white.xml` plus a filled center
-///   circle (our addition; KISS keeps the ring hollow), tinted with the
-///   primary/accent color (white on the all-apps "kiss bar"). Opens the app
-///   list.
+/// * `Kiss` — the ring from `ic_launcher_white.xml`, tinted with the
+///   primary/accent color (white on the all-apps "kiss bar"). A filled center
+///   dot appears only in all-apps mode. Opens the app list.
 /// * `Cog` — settings gear, tinted with the search (text) color. Opens
 ///   settings.
 /// * `Clear` — the X from `ic_close.xml`, tinted with the search color.
@@ -54,13 +53,15 @@ fn cog_tooth(center: Pos2, angle: f32) -> Vec<Pos2> {
 /// Kiss ring, white on the all-apps bar, text color otherwise); hover/press
 /// feedback is a translucent wash of the same color.
 /// `show_glyph` implements KISS `pref-hide-circle`: the touch target stays
-/// clickable, only the glyph is hidden.
+/// clickable, only the glyph is hidden. `show_kiss_dot` controls whether the
+/// Kiss ring's center dot is shown (all-apps mode only).
 pub(super) fn bar_icon_button(
     ui: &mut egui::Ui,
     icon: BarIcon,
     icon_color: Color32,
     tooltip: &str,
     show_glyph: bool,
+    show_kiss_dot: bool,
 ) -> egui::Response {
     let size = Vec2::splat(44.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -89,11 +90,13 @@ pub(super) fn bar_icon_button(
                 BarIcon::Kiss => {
                     // `ic_launcher_white.xml`: outer diameter is 87% of the
                     // box, stroke 14%. r=9, w=3 (Ø 87.5%, stroke 12.5%) is
-                    // the closest whole-pixel match. The filled r=5 center
-                    // (half the ring's outer diameter) is ours; KISS keeps
-                    // the ring hollow.
+                    // the closest whole-pixel match. Keep the ring hollow
+                    // outside all-apps mode, and add a filled center dot in
+                    // all-apps mode.
                     painter.circle_stroke(center, 9.0, Stroke::new(3.0_f32, icon_color));
-                    painter.circle_filled(center, 5.0, icon_color);
+                    if show_kiss_dot {
+                        painter.circle_filled(center, 5.0, icon_color);
+                    }
                 }
                 BarIcon::Cog => {
                     // Hollow hub ring with six flat-cut teeth. Outer extent
