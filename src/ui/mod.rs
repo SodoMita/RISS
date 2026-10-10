@@ -14,6 +14,7 @@ mod results;
 mod search_bar;
 mod settings;
 mod touch;
+mod widgets;
 
 use colors::Palette;
 
@@ -38,6 +39,7 @@ pub struct RissApp {
     selected_index: usize,
     screen: Screen,
     show_all_apps: bool,
+    show_hidden: bool,
     status_message: Option<(String, Instant)>,
     editing_tags: Option<String>,
     tag_input: String,
@@ -69,6 +71,7 @@ impl RissApp {
             selected_index: 0,
             screen: Screen::Launcher,
             show_all_apps: false,
+            show_hidden: false,
             status_message: None,
             editing_tags: None,
             tag_input: String::new(),
@@ -151,6 +154,24 @@ impl RissApp {
             let app_matches = self.results.len();
             let extra = self.provider_results(&query, app_matches);
             self.results.extend(extra);
+        } else if self.show_hidden {
+            // The hidden-apps list: activating a row restores it (KISS has no
+            // such screen; pr-3 called it "Excluded").
+            self.results = self
+                .all_apps
+                .iter()
+                .filter(|entry| self.is_excluded_from_search(entry))
+                .cloned()
+                .map(|entry| SearchResult {
+                    score: 0,
+                    match_type: MatchType::Fuzzy,
+                    action: ResultAction::Excluded {
+                        exec: entry.exec.clone(),
+                    },
+                    entry,
+                })
+                .collect();
+            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
         } else if self.show_all_apps {
             self.results = self
                 .apps
@@ -278,6 +299,9 @@ impl RissApp {
                 "history" | "recent" => Some((ResultView::History, "History")),
                 "apps" | "all apps" | "all" => Some((ResultView::AllApps, "All applications")),
                 "settings" | "preferences" => Some((ResultView::Settings, "Settings")),
+                "excluded" | "hidden" | "hidden apps" | "hidden applications" => {
+                    Some((ResultView::Excluded, "Hidden applications"))
+                }
                 _ => None,
             };
             if let Some((view, title)) = special {
@@ -436,6 +460,7 @@ impl RissApp {
                 }
                 self.query.clear();
                 self.show_all_apps = false;
+                self.show_hidden = false;
                 self.reload_apps();
                 self.set_status(format!("Opened {}", name));
             }
@@ -513,16 +538,33 @@ impl RissApp {
                 match view {
                     ResultView::History => {
                         self.show_all_apps = false;
+                        self.show_hidden = false;
                         self.query.clear();
                     }
                     ResultView::AllApps => {
                         self.show_all_apps = true;
+                        self.show_hidden = false;
                         self.query.clear();
+                    }
+                    ResultView::Excluded => {
+                        self.show_all_apps = false;
+                        self.show_hidden = true;
+                        self.query.clear();
+                        self.set_status("Hidden applications — activate to restore");
                     }
                     ResultView::Settings => self.screen = Screen::Settings,
                 }
                 self.selected_index = 0;
                 self.update_results();
+            }
+            ResultAction::Excluded { exec } => {
+                let entry = self.all_apps.iter().find(|e| e.exec == exec).cloned();
+                if let Some(entry) = entry {
+                    self.set_excluded_from_search(&entry, false);
+                    self.set_status(format!("{} restored to results", self.display_name(&entry)));
+                    self.reload_apps();
+                    self.update_results();
+                }
             }
         }
     }

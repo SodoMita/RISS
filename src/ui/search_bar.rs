@@ -14,6 +14,7 @@ impl RissApp {
                 self.query.clear();
             } else {
                 self.show_all_apps = false;
+                self.show_hidden = false;
             }
             self.update_results();
         }
@@ -61,6 +62,7 @@ impl RissApp {
                             self.screen = Screen::Settings;
                         } else {
                             self.show_all_apps = !self.show_all_apps;
+                            self.show_hidden = false;
                             self.update_results();
                         }
                     }
@@ -79,6 +81,7 @@ impl RissApp {
                     );
                     if response.changed() {
                         self.show_all_apps = false;
+                        self.show_hidden = false;
                         self.update_results();
                     }
                     let icon = if self.query.is_empty() {
@@ -103,6 +106,7 @@ impl RissApp {
                             self.update_results();
                         } else if swap {
                             self.show_all_apps = !self.show_all_apps;
+                            self.show_hidden = false;
                             self.update_results();
                         } else {
                             self.screen = Screen::Settings;

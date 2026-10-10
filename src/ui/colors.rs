@@ -73,3 +73,26 @@ impl RissApp {
         ctx.set_style(style);
     }
 }
+
+/// Muted colours used for the generated application badges (from PR #3).
+pub(super) const BADGE_COLORS: [[u8; 3]; 8] = [
+    [137, 180, 250],
+    [166, 227, 161],
+    [249, 226, 175],
+    [243, 139, 168],
+    [180, 190, 254],
+    [148, 226, 213],
+    [247, 208, 166],
+    [203, 166, 247],
+];
+
+/// Deterministic badge colour for an application name (FNV-1a of the name).
+pub(super) fn badge_color(seed: &str) -> Color32 {
+    let mut hash: u32 = 2166136261;
+    for byte in seed.as_bytes() {
+        hash ^= *byte as u32;
+        hash = hash.wrapping_mul(16777619);
+    }
+    let color = BADGE_COLORS[(hash % BADGE_COLORS.len() as u32) as usize];
+    Color32::from_rgb(color[0], color[1], color[2])
+}

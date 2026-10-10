@@ -1,3 +1,4 @@
+use super::widgets::{self, Icon};
 use super::{Palette, RissApp};
 #[cfg(target_os = "android")]
 use crate::android_app_entry::{self as app_entry, AppEntry};
@@ -64,12 +65,6 @@ impl RissApp {
             ui.horizontal(|ui| {
                 for app in favorites {
                     let shown_name = self.display_name(&app);
-                    let initial = shown_name
-                        .chars()
-                        .next()
-                        .unwrap_or('?')
-                        .to_uppercase()
-                        .to_string();
                     let (rect, response) =
                         ui.allocate_exact_size(Vec2::splat(icon_size), Sense::click());
                     let response = response.on_hover_text(shown_name);
@@ -86,18 +81,16 @@ impl RissApp {
                             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                             Color32::WHITE,
                         );
-                    } else {
-                        if !self.settings.enabled("transparent-favorites") {
-                            ui.painter()
-                                .circle_filled(rect.center(), icon_size * 0.5, p.surface);
-                        }
+                    } else if self.settings.enabled("transparent-favorites") {
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
-                            initial,
+                            widgets::first_letter(&shown_name),
                             FontId::proportional(if icon_size > 44.0 { 22.0 } else { 18.0 }),
                             p.text,
                         );
+                    } else {
+                        widgets::paint_app_badge(ui, rect, &shown_name, icon_size, &p);
                     }
                     if response.clicked() {
                         launch_exec = Some(app.exec.clone());
@@ -226,18 +219,15 @@ impl RissApp {
             } else {
                 Stroke::NONE
             });
+        let mut toggle = false;
+        let mut open_menu = false;
+        let actions_width = if result.entry.is_virtual() { 0.0 } else { 60.0 };
         let shown = frame.show(ui, |ui| {
             ui.set_min_height(height - 12.0);
             ui.horizontal(|ui| {
                 if !self.settings.enabled("icons-hide") {
-                    let initial = shown_name
-                        .chars()
-                        .next()
-                        .unwrap_or('?')
-                        .to_uppercase()
-                        .to_string();
-                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
                     if let Some(texture_id) = icon_texture {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
                         ui.painter().image(
                             texture_id,
                             rect,
@@ -245,60 +235,99 @@ impl RissApp {
                             Color32::WHITE,
                         );
                     } else {
-                        ui.painter().circle_filled(
-                            rect.center(),
-                            19.0,
-                            if result.entry.is_favorite {
-                                p.accent
-                            } else {
-                                p.surface
-                            },
-                        );
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            initial,
-                            FontId::proportional(18.0),
-                            if result.entry.is_favorite {
-                                p.bg
-                            } else {
-                                p.text
-                            },
-                        );
+                        widgets::app_badge(ui, &result.entry, &shown_name, 40.0, &p);
                     }
                 }
                 ui.add_space(5.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(&shown_name).size(16.0).color(
-                        if result.match_type == MatchType::Exact && !self.query.is_empty() {
-                            p.accent
-                        } else {
-                            p.text
-                        },
-                    ));
-                    if self.settings.enabled("subicon-visible") && !result.entry.comment.is_empty()
-                    {
-                        ui.label(RichText::new(&result.entry.comment).size(11.0).color(p.dim));
-                    }
-                    if self.settings.enabled("tags-visible") && !result.entry.tags.is_empty() {
-                        ui.label(
-                            RichText::new(
-                                result
-                                    .entry
-                                    .tags
-                                    .iter()
-                                    .map(|t| format!("#{t}"))
-                                    .collect::<Vec<_>>()
-                                    .join("  "),
-                            )
-                            .size(10.0)
-                            .color(p.accent),
-                        );
-                    }
+                let text_width = (ui.available_width() - actions_width).max(20.0);
+                ui.allocate_ui(Vec2::new(text_width, height - 12.0), |ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(&shown_name).size(16.0).color(
+                            if result.match_type == MatchType::Exact && !self.query.is_empty() {
+                                p.accent
+                            } else {
+                                p.text
+                            },
+                        ));
+                        if self.settings.enabled("subicon-visible")
+                            && !result.entry.comment.is_empty()
+                        {
+                            ui.label(RichText::new(&result.entry.comment).size(11.0).color(p.dim));
+                        }
+                        if self.settings.enabled("tags-visible") && !result.entry.tags.is_empty() {
+                            ui.label(
+                                RichText::new(
+                                    result
+                                        .entry
+                                        .tags
+                                        .iter()
+                                        .map(|t| format!("#{t}"))
+                                        .collect::<Vec<_>>()
+                                        .join("  "),
+                                )
+                                .size(10.0)
+                                .color(p.accent),
+                            );
+                        }
+                    });
                 });
+                if actions_width > 0.0 {
+                    ui.allocate_ui(Vec2::new(actions_width, height - 12.0), |ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.horizontal(|ui| {
+                            let star = if result.entry.is_favorite {
+                                Icon::StarFilled
+                            } else {
+                                Icon::Star
+                            };
+                            let star_color = if result.entry.is_favorite {
+                                p.accent
+                            } else {
+                                p.dim
+                            };
+                            if widgets::icon_button(
+                                ui,
+                                star,
+                                28.0,
+                                star_color,
+                                &p,
+                                if result.entry.is_favorite {
+                                    "Remove from favorites"
+                                } else {
+                                    "Add to favorites"
+                                },
+                            )
+                            .clicked()
+                            {
+                                toggle = true;
+                            }
+                            if widgets::icon_button(
+                                ui,
+                                Icon::Kebab,
+                                28.0,
+                                p.dim,
+                                &p,
+                                "More actions",
+                            )
+                            .clicked()
+                            {
+                                open_menu = true;
+                            }
+                        });
+                    });
+                }
             });
         });
-        let response = shown.response.interact(Sense::click());
+        // The row click area stops before the action buttons so that pressing
+        // ★ or ⋮ does not also launch the application.
+        let response = {
+            let mut click_rect = shown.response.rect;
+            click_rect.max.x -= actions_width;
+            ui.interact(click_rect, shown.response.id, Sense::click())
+        };
+        if open_menu {
+            egui::Popup::open_id(&response.ctx, egui::Popup::default_response_id(&response));
+        }
         if response.clicked() {
             self.selected_index = index;
             self.activate(index);
@@ -306,7 +335,6 @@ impl RissApp {
         if response.hovered() {
             self.selected_index = index;
         }
-        let mut toggle = false;
         let mut edit = false;
         let mut rename = false;
         let mut launch = false;

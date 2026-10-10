@@ -33,6 +33,8 @@ pub enum ResultView {
     History,
     AllApps,
     Settings,
+    /// Applications hidden from the results; activating one restores it.
+    Excluded,
 }
 
 /// What happens when a result is activated.
@@ -52,6 +54,8 @@ pub enum ResultAction {
     Setting { id: String },
     /// Show one of the special lists.
     View(ResultView),
+    /// An excluded (hidden) application; activating restores it.
+    Excluded { exec: String },
 }
 
 /// Search engine for apps
