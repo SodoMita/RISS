@@ -17,6 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const HISTORY_FILE: &str = "history.json";
+/// Single-file export of both persisted documents.
+pub const BACKUP_FILE: &str = "riss-backup.json";
 
 /// Environment variable that overrides the data directory. Primarily meant
 /// for tests and portable setups.

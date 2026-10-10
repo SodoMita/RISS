@@ -8,6 +8,7 @@ mod android_app_entry;
 mod app_entry;
 
 mod history;
+mod providers;
 mod search;
 mod settings;
 mod storage;

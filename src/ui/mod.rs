@@ -3,7 +3,7 @@ use crate::android_app_entry::{self as app_entry, AppEntry};
 #[cfg(not(target_os = "android"))]
 use crate::app_entry::{self, AppEntry};
 use crate::history::{HistoryData, HistoryMode};
-use crate::search::{MatchType, SearchEngine, SearchResult};
+use crate::search::{self, MatchType, ResultAction, ResultView, SearchEngine, SearchResult};
 use crate::settings::SettingsData;
 use eframe::egui::{self, RichText};
 use std::collections::{HashMap, HashSet};
@@ -16,6 +16,7 @@ mod results;
 mod search_bar;
 mod settings;
 mod touch;
+mod widgets;
 
 use colors::Palette;
 use favorites::FavDrag;
@@ -43,9 +44,12 @@ pub struct RissApp {
     selected_index: usize,
     screen: Screen,
     show_all_apps: bool,
+    show_hidden: bool,
     status_message: Option<(String, Instant)>,
     editing_tags: Option<String>,
     tag_input: String,
+    editing_alias: Option<String>,
+    alias_input: String,
     settings_query: String,
     /// Query used by the "Manage favorites" screen to find apps to favorite.
     favorites_query: String,
@@ -56,6 +60,8 @@ pub struct RissApp {
     touch_start: Option<(egui::Pos2, f64)>,
     last_empty_tap: Option<(egui::Pos2, f64)>,
     startup_notes: Vec<String>,
+    /// Running countdown: total seconds and the start time.
+    timer: Option<(u64, Instant)>,
 }
 
 impl RissApp {
@@ -76,9 +82,12 @@ impl RissApp {
             selected_index: 0,
             screen: Screen::Launcher,
             show_all_apps: false,
+            show_hidden: false,
             status_message: None,
             editing_tags: None,
             tag_input: String::new(),
+            editing_alias: None,
+            alias_input: String::new(),
             settings_query: String::new(),
             favorites_query: String::new(),
             favorites_return: Screen::Launcher,
@@ -86,6 +95,7 @@ impl RissApp {
             touch_start: None,
             last_empty_tap: None,
             startup_notes,
+            timer: None,
         };
         app.reload_apps();
         app
@@ -139,19 +149,43 @@ impl RissApp {
         if !self.query.trim().is_empty() {
             // "Search excluded apps" lets typed queries find excluded apps;
             // they never appear in the normal lists either way.
-            let pool = if self.settings.enabled("enable-excluded-apps") {
-                &self.all_apps
-            } else {
-                &self.apps
+            let query = self.query.trim().to_string();
+            let max = if limit == 0 { usize::MAX } else { limit };
+            self.results = {
+                let pool = if self.settings.enabled("enable-excluded-apps") {
+                    &self.all_apps
+                } else {
+                    &self.apps
+                };
+                self.search_engine
+                    .search(&query, pool, &self.history.aliases, max)
             };
-            self.results = self.search_engine.search(
-                &self.query,
-                pool,
-                if limit == 0 { usize::MAX } else { limit },
-            );
             if self.settings.enabled("exclude-favorites-apps") {
                 self.results.retain(|r| !r.entry.is_favorite);
             }
+            // Providers append their rows below the application matches,
+            // exactly like KISS (web search always goes last).
+            let app_matches = self.results.len();
+            let extra = self.provider_results(&query, app_matches);
+            self.results.extend(extra);
+        } else if self.show_hidden {
+            // The hidden-apps list: activating a row restores it (KISS has no
+            // such screen; pr-3 called it "Excluded").
+            self.results = self
+                .all_apps
+                .iter()
+                .filter(|entry| self.is_excluded_from_search(entry))
+                .cloned()
+                .map(|entry| SearchResult {
+                    score: 0,
+                    match_type: MatchType::Fuzzy,
+                    action: ResultAction::Excluded {
+                        exec: entry.exec.clone(),
+                    },
+                    entry,
+                })
+                .collect();
+            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
         } else if self.show_all_apps {
             self.results = self
                 .apps
@@ -161,6 +195,7 @@ impl RissApp {
                     entry,
                     score: 0,
                     match_type: MatchType::Fuzzy,
+                    action: ResultAction::Launch,
                 })
                 .collect();
             self.results.sort_by_key(|r| r.entry.name.to_lowercase());
@@ -177,6 +212,143 @@ impl RissApp {
         self.selected_index = self
             .selected_index
             .min(self.results.len().saturating_sub(1));
+    }
+
+    /// Results contributed by the optional providers: shortcuts, settings,
+    /// excluded apps, timer, previous searches, web search, shell commands and
+    /// special lists. Mirrors the KISS provider stack.
+    fn provider_results(&self, query: &str, app_matches: usize) -> Vec<SearchResult> {
+        let mut results: Vec<SearchResult> = Vec::new();
+        let query_lower = query.to_lowercase();
+
+        // A digit bound to a shortcut jumps straight to that application.
+        if let Some(digit) = query.parse::<u8>().ok().filter(|d| (1..=9).contains(d)) {
+            if self.settings.enabled("enable-shortcuts") {
+                if let Some(exec) = self.history.shortcut_for(digit) {
+                    if let Some(app) = self.all_apps.iter().find(|app| &app.exec == exec) {
+                        let mut entry = app.clone();
+                        entry.is_favorite = true;
+                        results.push(SearchResult {
+                            entry,
+                            score: 9000,
+                            match_type: MatchType::Provider,
+                            action: ResultAction::Launch,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Settings provider: the settings can be searched from the query bar.
+        if self.settings.enabled("enable-settings") {
+            let mut hits: Vec<SearchResult> = crate::settings::specs()
+                .into_iter()
+                .filter(|spec| {
+                    let value = match spec.kind {
+                        crate::settings::SettingKind::Toggle => {
+                            if self.settings.enabled(spec.key) {
+                                "on".to_string()
+                            } else {
+                                "off".to_string()
+                            }
+                        }
+                        _ => self.settings.value(spec.key).to_string(),
+                    };
+                    let haystack =
+                        format!("{} {} {} {}", spec.section, spec.title, spec.key, value)
+                            .to_lowercase();
+                    haystack.contains(&query_lower)
+                })
+                .take(3)
+                .map(|spec| {
+                    let value = match spec.kind {
+                        crate::settings::SettingKind::Toggle => {
+                            if self.settings.enabled(spec.key) {
+                                "On"
+                            } else {
+                                "Off"
+                            }
+                        }
+                        _ => self.settings.value(spec.key),
+                    };
+                    search::setting_result(spec.title, spec.section, spec.key, value)
+                })
+                .collect();
+            hits.truncate(3);
+            results.extend(hits);
+        }
+
+        // Timer provider.
+        if self.settings.enabled("enable-timer") {
+            if let Some(seconds) = crate::providers::parse_timer(query) {
+                results.push(search::timer_result(seconds));
+            }
+        }
+
+        // Previously run web searches and shell commands resurface as the
+        // query narrows.
+        if self.settings.enabled("search-through-history") {
+            for previous in self.history.recent_searches(20) {
+                if previous.to_lowercase().contains(&query_lower) {
+                    let mut result = self.web_search_result(&previous);
+                    result.entry.name = previous.clone();
+                    result.score = 200;
+                    results.push(result);
+                }
+            }
+        }
+        if self.settings.enabled("enable-exec") {
+            for previous in self.history.recent_execs(10) {
+                if previous != query && previous.to_lowercase().contains(&query_lower) {
+                    let mut result = search::exec_result(&previous);
+                    result.score = 250;
+                    results.push(result);
+                }
+            }
+        }
+
+        // The special lists stay reachable by typing their name.
+        if query.len() > 2 {
+            let special = match query_lower.as_str() {
+                "history" | "recent" => Some((ResultView::History, "History")),
+                "apps" | "all apps" | "all" => Some((ResultView::AllApps, "All applications")),
+                "settings" | "preferences" => Some((ResultView::Settings, "Settings")),
+                "excluded" | "hidden" | "hidden apps" | "hidden applications" => {
+                    Some((ResultView::Excluded, "Hidden applications"))
+                }
+                _ => None,
+            };
+            if let Some((view, title)) = special {
+                let mut result =
+                    search::view_result(view, title, "Special list — activate to open");
+                result.score = 850;
+                results.push(result);
+            }
+        }
+
+        // Web search, exactly like KISS which always offers one at the bottom.
+        if self.settings.enabled("enable-search") {
+            results.push(self.web_search_result(query));
+        }
+
+        // Shell command, only when nothing else looks like a match.
+        if self.settings.enabled("enable-exec") && app_matches == 0 && query.contains(' ') {
+            results.push(search::exec_result(query));
+        }
+
+        results.sort_by_key(|result| std::cmp::Reverse(result.score));
+        results
+    }
+
+    /// Web search row for `query` with the configured provider.
+    fn web_search_result(&self, query: &str) -> SearchResult {
+        let name = self.settings.value("default-search-provider");
+        let template = crate::providers::provider_template(
+            name,
+            self.settings.value("custom-search-provider-add"),
+        )
+        .unwrap_or_else(|| "https://duckduckgo.com/?q={}".to_string());
+        search::web_search_result(name, &template, query)
     }
 
     /// Order the default (no-query) list according to the `history-mode`
@@ -230,6 +402,37 @@ impl RissApp {
             .any(|x| !x.is_empty() && (entry.exec == x || entry.name.eq_ignore_ascii_case(x)))
     }
 
+    /// Is the app on the `edit-excluded-apps` list (hidden from the lists)?
+    fn is_excluded_from_search(&self, entry: &AppEntry) -> bool {
+        let excluded = self.settings.value("edit-excluded-apps");
+        excluded
+            .split(',')
+            .map(str::trim)
+            .any(|x| !x.is_empty() && (entry.exec == x || entry.name.eq_ignore_ascii_case(x)))
+    }
+
+    /// Add or remove an app from the `edit-excluded-apps` list.
+    fn set_excluded_from_search(&mut self, entry: &AppEntry, excluded: bool) {
+        let mut items: Vec<String> = self
+            .settings
+            .value("edit-excluded-apps")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect();
+        items.retain(|item| {
+            !entry.exec.eq_ignore_ascii_case(item) && !entry.name.eq_ignore_ascii_case(item)
+        });
+        if excluded {
+            items.push(entry.exec.clone());
+        }
+        self.settings
+            .values
+            .insert("edit-excluded-apps".to_owned(), items.join(","));
+        self.save_settings();
+    }
+
     /// Add or remove an app from the `edit-excluded-from-history-apps` list.
     fn set_excluded_from_history(&mut self, entry: &AppEntry, excluded: bool) {
         let mut items: Vec<String> = self
@@ -259,6 +462,7 @@ impl RissApp {
         let Some(entry) = self.all_apps.iter().find(|a| a.exec == exec).cloned() else {
             return;
         };
+        let name = self.display_name(&entry);
         match entry.launch() {
             Ok(()) => {
                 if !self.settings.enabled("freeze-history")
@@ -270,8 +474,9 @@ impl RissApp {
                 }
                 self.query.clear();
                 self.show_all_apps = false;
+                self.show_hidden = false;
                 self.reload_apps();
-                self.set_status(format!("Opened {}", entry.name));
+                self.set_status(format!("Opened {}", name));
             }
             Err(error) => self.set_status(error),
         }
@@ -282,6 +487,111 @@ impl RissApp {
             let exec = result.entry.exec.clone();
             self.launch_exec(&exec);
         }
+    }
+
+    /// Shown name of an entry, honoring the user's rename.
+    fn display_name(&self, entry: &AppEntry) -> String {
+        search::display_name(entry, &self.history.aliases)
+    }
+
+    /// Activate the selected result: launch apps or run its provider action.
+    fn activate(&mut self, index: usize) {
+        let action = match self.results.get(index) {
+            Some(result) => result.action.clone(),
+            None => return,
+        };
+        match action {
+            ResultAction::Launch => self.launch_result(index),
+            ResultAction::WebSearch { provider, query } => {
+                let template = crate::providers::provider_template(
+                    &provider,
+                    self.settings.value("custom-search-provider-add"),
+                )
+                .unwrap_or_else(|| "https://duckduckgo.com/?q={}".to_string());
+                let url = crate::providers::provider_url(&template, &query);
+                match crate::providers::open_url(&url) {
+                    Ok(()) => {
+                        self.history.record_search(&query);
+                        self.save_history();
+                        self.set_status(format!("Searching {} for “{}”", provider, query));
+                    }
+                    Err(error) => self.set_status(error),
+                }
+                self.query.clear();
+                self.update_results();
+            }
+            ResultAction::Exec { command } => match crate::providers::run_command(&command) {
+                Ok(()) => {
+                    self.history.record_exec(&command);
+                    self.save_history();
+                    self.set_status(format!("Ran {}", command));
+                }
+                Err(error) => self.set_status(error),
+            },
+            ResultAction::Timer { seconds } => {
+                if self.timer.is_some() {
+                    self.timer = None;
+                    self.set_status("Timer cancelled");
+                } else {
+                    self.timer = Some((seconds, Instant::now()));
+                    self.set_status(format!(
+                        "Timer started: {}",
+                        crate::providers::format_duration(seconds)
+                    ));
+                }
+            }
+            ResultAction::Copy { text } => {
+                if crate::providers::copy_to_clipboard(&text) {
+                    self.set_status(format!("Copied {}", text));
+                } else {
+                    self.set_status(format!("{} — clipboard helper not found", text));
+                }
+            }
+            ResultAction::Setting { id } => self.focus_setting(&id),
+            ResultAction::View(view) => {
+                match view {
+                    ResultView::History => {
+                        self.show_all_apps = false;
+                        self.show_hidden = false;
+                        self.query.clear();
+                    }
+                    ResultView::AllApps => {
+                        self.show_all_apps = true;
+                        self.show_hidden = false;
+                        self.query.clear();
+                    }
+                    ResultView::Excluded => {
+                        self.show_all_apps = false;
+                        self.show_hidden = true;
+                        self.query.clear();
+                        self.set_status("Hidden applications — activate to restore");
+                    }
+                    ResultView::Settings => self.screen = Screen::Settings,
+                }
+                self.selected_index = 0;
+                self.update_results();
+            }
+            ResultAction::Excluded { exec } => {
+                let entry = self.all_apps.iter().find(|e| e.exec == exec).cloned();
+                if let Some(entry) = entry {
+                    self.set_excluded_from_search(&entry, false);
+                    self.set_status(format!("{} restored to results", self.display_name(&entry)));
+                    self.reload_apps();
+                    self.update_results();
+                }
+            }
+        }
+    }
+
+    /// Open the settings screen focused on one preference (KISS' settings
+    /// provider): the filter jumps straight to the matching row.
+    fn focus_setting(&mut self, key: &str) {
+        self.screen = Screen::Settings;
+        self.settings_query = crate::settings::specs()
+            .into_iter()
+            .find(|spec| spec.key == key)
+            .map(|spec| spec.title.to_string())
+            .unwrap_or_else(|| key.to_string());
     }
 
     fn toggle_favorite_exec(&mut self, exec: &str) {
@@ -298,6 +608,27 @@ impl RissApp {
 
     fn set_status(&mut self, text: impl Into<String>) {
         self.status_message = Some((text.into(), Instant::now()));
+    }
+
+    /// Advance a running countdown, ringing the terminal bell when it ends.
+    /// The status line doubles as the timer display.
+    fn timer_tick(&mut self) {
+        if let Some((total, started)) = self.timer {
+            let elapsed = started.elapsed().as_secs();
+            if elapsed >= total {
+                self.timer = None;
+                self.set_status("Timer finished");
+                // Audible feedback, like the KISS timer notification.
+                #[cfg(not(target_os = "android"))]
+                println!("\u{7}");
+            } else {
+                let remaining = total - elapsed;
+                self.set_status(format!(
+                    "{} left — activate the timer row to cancel",
+                    crate::providers::format_duration(remaining)
+                ));
+            }
+        }
     }
 
     /// Persist history, surfacing write failures instead of discarding them.
@@ -396,6 +727,7 @@ impl eframe::App for RissApp {
         {
             self.status_message = None;
         }
+        self.timer_tick();
         if !self.startup_notes.is_empty() {
             let notes = std::mem::take(&mut self.startup_notes);
             self.set_status(notes.join(" • "));

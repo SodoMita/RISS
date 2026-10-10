@@ -4,6 +4,7 @@ use crate::android_app_entry::AppEntry;
 use crate::app_entry::AppEntry;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use std::collections::HashMap;
 
 /// Result of a search with relevance score
 #[derive(Debug, Clone)]
@@ -11,6 +12,8 @@ pub struct SearchResult {
     pub entry: AppEntry,
     pub score: i64,
     pub match_type: MatchType,
+    /// What happens when the result is activated.
+    pub action: ResultAction,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +23,39 @@ pub enum MatchType {
     Fuzzy,
     Tag,
     Category,
+    /// A row contributed by a provider (web search, timer, settings…).
+    Provider,
+}
+
+/// Special lists reachable from the search bar (KISS' info bar buttons).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResultView {
+    History,
+    AllApps,
+    Settings,
+    /// Applications hidden from the results; activating one restores it.
+    Excluded,
+}
+
+/// What happens when a result is activated.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResultAction {
+    /// Launch the application.
+    Launch,
+    /// Open a web search in the browser.
+    WebSearch { provider: String, query: String },
+    /// Run a shell command.
+    Exec { command: String },
+    /// Start a countdown; activating again cancels it.
+    Timer { seconds: u64 },
+    /// Copy the text to the clipboard.
+    Copy { text: String },
+    /// Jump to a row of the settings screen.
+    Setting { id: String },
+    /// Show one of the special lists.
+    View(ResultView),
+    /// An excluded (hidden) application; activating restores it.
+    Excluded { exec: String },
 }
 
 /// Search engine for apps
@@ -35,25 +71,25 @@ impl SearchEngine {
     }
 
     /// Search through apps with the given query
-    pub fn search(&self, query: &str, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
+    pub fn search(
+        &self,
+        query: &str,
+        apps: &[AppEntry],
+        aliases: &HashMap<String, String>,
+        max_results: usize,
+    ) -> Vec<SearchResult> {
         let query = query.trim();
 
         if query.is_empty() {
             return Vec::new();
         }
 
-        // Check if it's a calculation
-        if let Some(_result) = try_calculate(query) {
-            // We'll handle this specially in the UI
-            // For now, return empty and handle in UI
-        }
-
         let query_lower = query.to_lowercase();
         let mut results: Vec<SearchResult> = apps
             .iter()
             .filter_map(|app| {
-                let name_lower = app.name.to_lowercase();
-                let searchable = app.searchable_text();
+                let name_lower = display_name(app, aliases).to_lowercase();
+                let searchable = searchable_text(app, aliases);
 
                 // Exact match on name
                 if name_lower == query_lower {
@@ -61,16 +97,31 @@ impl SearchEngine {
                         entry: app.clone(),
                         score: 10000,
                         match_type: MatchType::Exact,
+                        action: ResultAction::Launch,
                     });
                 }
 
                 // Prefix match on name
                 if name_lower.starts_with(&query_lower) {
-                    let score = 5000 + (100 - app.name.len() as i64);
+                    let score = 5000 + (100 - name_lower.len() as i64);
                     return Some(SearchResult {
                         entry: app.clone(),
                         score,
                         match_type: MatchType::Prefix,
+                        action: ResultAction::Launch,
+                    });
+                }
+
+                // Word match inside the name ("fire" matching "Firefox Nightly")
+                if name_lower
+                    .split_whitespace()
+                    .any(|w| w.starts_with(&query_lower))
+                {
+                    return Some(SearchResult {
+                        entry: app.clone(),
+                        score: 4000,
+                        match_type: MatchType::Prefix,
+                        action: ResultAction::Launch,
                     });
                 }
 
@@ -81,6 +132,7 @@ impl SearchEngine {
                             entry: app.clone(),
                             score: 3000,
                             match_type: MatchType::Tag,
+                            action: ResultAction::Launch,
                         });
                     }
                 }
@@ -92,6 +144,7 @@ impl SearchEngine {
                             entry: app.clone(),
                             score: 2000,
                             match_type: MatchType::Category,
+                            action: ResultAction::Launch,
                         });
                     }
                 }
@@ -104,6 +157,7 @@ impl SearchEngine {
                         entry: app.clone(),
                         score: boosted,
                         match_type: MatchType::Fuzzy,
+                        action: ResultAction::Launch,
                     });
                 }
 
@@ -111,8 +165,14 @@ impl SearchEngine {
             })
             .collect();
 
-        // Sort by score descending
-        results.sort_by_key(|a| std::cmp::Reverse(a.score));
+        // Sort by score descending, then by name so the order is stable.
+        results.sort_by(|a, b| {
+            b.score.cmp(&a.score).then_with(|| {
+                display_name(&a.entry, aliases)
+                    .to_lowercase()
+                    .cmp(&display_name(&b.entry, aliases).to_lowercase())
+            })
+        });
         results.truncate(max_results);
         results
     }
@@ -136,6 +196,7 @@ impl SearchEngine {
                     } else {
                         MatchType::Fuzzy
                     },
+                    action: ResultAction::Launch,
                 }
             })
             .collect();
@@ -146,12 +207,104 @@ impl SearchEngine {
     }
 }
 
+/// The name shown for an app, honoring the user's rename (KISS alias).
+pub fn display_name(app: &AppEntry, aliases: &HashMap<String, String>) -> String {
+    match aliases.get(&app.exec) {
+        Some(alias) => alias.clone(),
+        None => app.name.clone(),
+    }
+}
+
+/// Searchable text, including any rename the user gave the app.
+fn searchable_text(app: &AppEntry, aliases: &HashMap<String, String>) -> String {
+    let mut text = app.searchable_text();
+    if let Some(alias) = aliases.get(&app.exec) {
+        text.insert(0, ' ');
+        text.insert_str(0, alias);
+    }
+    text
+}
+
+// --- Synthetic results used by the optional providers ---------------------
+
+/// A web search result for `query`, using `template` as the URL of the
+/// provider (`{}` or `%s` is replaced by the encoded query).
+pub fn web_search_result(provider: &str, template: &str, query: &str) -> SearchResult {
+    let url = crate::providers::provider_url(template, query);
+    SearchResult {
+        entry: AppEntry::virtual_entry(&format!("“{}”", query), provider, &url),
+        score: 400,
+        match_type: MatchType::Provider,
+        action: ResultAction::WebSearch {
+            provider: provider.to_string(),
+            query: query.to_string(),
+        },
+    }
+}
+
+pub fn exec_result(command: &str) -> SearchResult {
+    SearchResult {
+        entry: AppEntry::virtual_entry(&format!("Run “{}”", command), "Shell command", command),
+        score: 300,
+        match_type: MatchType::Provider,
+        action: ResultAction::Exec {
+            command: command.to_string(),
+        },
+    }
+}
+
+pub fn timer_result(seconds: u64) -> SearchResult {
+    SearchResult {
+        entry: AppEntry::virtual_entry(
+            &format!("Wait {}", crate::providers::format_duration(seconds)),
+            "Timer — activate to start",
+            "",
+        ),
+        score: 500,
+        match_type: MatchType::Provider,
+        action: ResultAction::Timer { seconds },
+    }
+}
+
+pub fn copy_result(text: &str, label: &str) -> SearchResult {
+    SearchResult {
+        entry: AppEntry::virtual_entry(text, label, ""),
+        score: 800,
+        match_type: MatchType::Provider,
+        action: ResultAction::Copy {
+            text: text.to_string(),
+        },
+    }
+}
+
+pub fn setting_result(title: &str, section: &str, id: &str, value: &str) -> SearchResult {
+    SearchResult {
+        entry: AppEntry::virtual_entry(
+            &format!("{} · {}", section, title),
+            if value.is_empty() { "Setting" } else { value },
+            id,
+        ),
+        score: 900,
+        match_type: MatchType::Provider,
+        action: ResultAction::Setting { id: id.to_string() },
+    }
+}
+
+pub fn view_result(view: ResultView, title: &str, comment: &str) -> SearchResult {
+    SearchResult {
+        entry: AppEntry::virtual_entry(title, comment, ""),
+        score: 900,
+        match_type: MatchType::Provider,
+        action: ResultAction::View(view),
+    }
+}
+
 /// Try to evaluate a mathematical expression
 pub fn try_calculate(input: &str) -> Option<String> {
     let input = input.trim();
 
     // Only try if it looks like a math expression
-    if !input.chars().any(|c| "+-*/^".contains(c)) {
+    if !crate::providers::looks_like_math(input) {
         return None;
     }
 
@@ -288,5 +441,28 @@ mod tests {
         assert_eq!(try_calculate("2^10"), Some("= 1024".to_string()));
         assert_eq!(try_calculate("(5+3)*2"), Some("= 16".to_string()));
         assert_eq!(try_calculate("hello"), None);
+    }
+
+    #[test]
+    fn aliases_rename_results() {
+        let entry = AppEntry::virtual_entry("Old Name", "comment", "exec-key");
+        let mut aliases = HashMap::new();
+        aliases.insert("exec-key".to_string(), "New Name".to_string());
+        assert_eq!(display_name(&entry, &aliases), "New Name");
+        assert_eq!(display_name(&entry, &HashMap::new()), "Old Name");
+    }
+
+    #[test]
+    fn virtual_entries_carry_actions() {
+        let web = web_search_result("DuckDuckGo", "https://duckduckgo.com/?q={}", "hi");
+        assert!(web.entry.is_virtual());
+        assert_eq!(
+            web.action,
+            ResultAction::WebSearch {
+                provider: "DuckDuckGo".to_string(),
+                query: "hi".to_string(),
+            }
+        );
+        assert_eq!(timer_result(95).entry.name, "Wait 1m 35s");
     }
 }

@@ -16,7 +16,15 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 
 🏷️ **Custom Tags** - Add custom tags to apps for better organization
 
-🧮 **Calculator** - Built-in calculator for quick math (supports +, -, *, /, ^, parentheses)
+🧮 **Calculator** - Built-in calculator for quick math (supports +, -, *, /, ^, parentheses), with one-click copy
+
+🌐 **Providers** - Web search (configurable engine), shell commands, timers with audible alarm, settings search and previous searches — all offered as extra rows under your app matches, just like KISS
+
+⏱️ **Timers** - Type `timer 5m` or `sleep 30s` to start a countdown; activate the row again to cancel
+
+✏️ **Rename & shortcuts** - Long-press any result to rename it, pin it to the numbers 1–9 (type the digit to jump straight to it), copy its name or command, or open its `.desktop` file
+
+💾 **Import / export** - Back up settings and history to a single JSON file and restore them later
 
 👆 **Touch-first controls** - Large tap targets, long-press app actions, swipe gestures, and a KISS-style bottom bar
 
@@ -90,7 +98,21 @@ cargo build --release
 - Type mathematical expressions directly in the search bar
 - Supported operators: `+`, `-`, `*`, `/`, `^` (power)
 - Supports parentheses: `(5+3)*2`
-- Example: Type `2^10` to see `= 1024`
+- Example: Type `2^10` to see `= 1024`, then hit **Copy** to grab the answer
+
+#### Providers
+- Type almost anything to also get provider rows below the app matches:
+  - **Web search** opens the query in your configured search engine
+  - **Shell commands** run multi-word queries in `sh -c` (desktop only)
+  - **Timers** start from `timer 5m`, `sleep 30s`, `1h` …
+  - **Settings search** finds any preference straight from the query bar — activate it to jump to that setting
+  - **Previous searches** resurface earlier web searches
+- Each provider can be switched off under *Settings → Search providers*
+
+#### Rename & number shortcuts
+- Long-press a result to rename it, favorite it, edit tags, reset its rank, hide it, or pin it to a number
+- Type `1`–`9` in the search bar to jump to the app pinned to that number
+- The context menu also copies the name/command and opens the `.desktop` file
 
 #### App Discovery
 - Automatically scans standard Linux application directories:
@@ -160,6 +182,20 @@ Modify the window size in `src/main.rs`:
 
 ## Development
 
+### Testing & tooling
+
+- `cargo fmt -- --check`, `cargo clippy -- -D warnings`, `cargo test` and an
+  Android `cargo check` run in CI on every pull request.
+- `bash scripts/gui-smoke-test.sh [xvfb|wayland]` starts the launcher on a
+  headless display and screenshots it (CI runs both modes and uploads the
+  screenshots as the `smoke-screenshots` artifact). Requires `xvfb` +
+  ImageMagick or `cage` + `grim`.
+- Building inside a network-restricted sandbox (no crates.io, no rustup, no
+  apt)? See [RESTRICTED-ENVIRONMENT.md](RESTRICTED-ENVIRONMENT.md) for the
+  verified bootstrap: Rust toolchain from npm, an offline vendored-sources
+  test harness, CI-as-compiler debugging, and GUI testing options (small
+  Wayland compositors included).
+
 ### Project Structure
 
 ```
@@ -167,20 +203,21 @@ riss-launcher/
 ├── src/
 │   ├── main.rs          # Entry point
 │   ├── lib.rs           # Android entry point (cdylib)
-│   ├── ui/
-│   │   ├── mod.rs       # App state, layout and screen switching
-│   │   ├── results.rs   # Result rows and the favorites bar
+│   ├── ui/              # UI components and main app state
+│   │   ├── mod.rs       # App state, providers, timer, actions
+│   │   ├── results.rs   # Result rows, favorites, context menu
 │   │   ├── favorites.rs # Favorites manager: delete, reorder, retag, add
-│   │   ├── search_bar.rs# Search field and keyboard handling
-│   │   ├── settings.rs  # Settings screen
-│   │   ├── touch.rs     # Swipe and long-press gestures
-│   │   └── colors.rs    # Theme palette
+│   │   ├── search_bar.rs# Search bar and keyboard handling
+│   │   ├── settings.rs  # Settings screen and backup actions
+│   │   ├── colors.rs    # Theme palette
+│   │   └── touch.rs     # Gestures
 │   ├── app_entry.rs     # App discovery and .desktop file parsing
 │   ├── android_app_entry.rs  # Android app discovery and launching via JNI
-│   ├── search.rs        # Search engine and fuzzy matching
+│   ├── search.rs        # Search engine, fuzzy matching, provider rows
+│   ├── providers.rs     # Web search, shell commands, timers, clipboard
 │   ├── settings.rs      # KISS-compatible preferences
 │   ├── storage.rs       # Atomic, crash-safe persistence for both data files
-│   └── history.rs       # History tracking, favorites and ranking
+│   └── history.rs       # History tracking, favorites, tags, renames, ranking
 ├── Cargo.toml           # Dependencies
 └── README.md           # This file
 ```

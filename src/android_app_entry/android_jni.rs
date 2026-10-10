@@ -390,6 +390,86 @@ fn render_app_icon(env: &mut JNIEnv, activity: &JObject, package_name: &str) -> 
     Some((ICON_SIZE as usize, ICON_SIZE as usize, rgba))
 }
 
+/// Open a URL in the default browser (the KISS web provider on Android).
+pub fn open_url_jni(url: &str) -> Result<(), String> {
+    let app_guard = get_android_app().ok_or("AndroidApp not initialized")?;
+
+    let app: &AndroidApp = &*app_guard;
+    let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+    if vm_ptr.is_null() {
+        return Err("JavaVM pointer is null".to_string());
+    }
+
+    let vm = unsafe { jni::JavaVM::from_raw(vm_ptr) }
+        .map_err(|e| format!("Failed to create JavaVM: {:?}", e))?;
+
+    let activity_obj = app.activity_as_ptr() as jobject;
+    let activity = unsafe { JObject::from_raw(activity_obj) };
+
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("Failed to attach thread: {:?}", e))?;
+
+    // new Intent()
+    let intent_class = env
+        .find_class("android/content/Intent")
+        .map_err(|e| format!("Intent class not found: {:?}", e))?;
+    let intent = env
+        .new_object(&intent_class, "()V", &[])
+        .map_err(|e| format!("Failed to create intent: {:?}", e))?;
+
+    // intent.setAction(Intent.ACTION_VIEW)
+    let action: jni::objects::JString = env
+        .new_string("android.intent.action.VIEW")
+        .map_err(|e| format!("Failed to create action string: {:?}", e))?
+        .into();
+    env.call_method(
+        &intent,
+        "setAction",
+        "(Ljava/lang/String;)Landroid/content/Intent;",
+        &[JValue::Object(&action)],
+    )
+    .map_err(|e| format!("Failed to set the intent action: {:?}", e))?;
+
+    // intent.setData(Uri.parse(url))
+    let url_string: jni::objects::JString = env
+        .new_string(url)
+        .map_err(|e| format!("Failed to create url string: {:?}", e))?
+        .into();
+    let uri_class = env
+        .find_class("android/net/Uri")
+        .map_err(|e| format!("Uri class not found: {:?}", e))?;
+    let uri = env
+        .call_method(
+            &uri_class,
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::Object(&url_string)],
+        )
+        .map_err(|e| format!("Failed to parse the url: {:?}", e))?
+        .l()
+        .map_err(|e| format!("Uri.parse returned nothing: {:?}", e))?;
+    env.call_method(
+        &intent,
+        "setData",
+        "(Landroid/net/Uri;)Landroid/content/Intent;",
+        &[JValue::Object(&uri)],
+    )
+    .map_err(|e| format!("Failed to set the intent data: {:?}", e))?;
+
+    // activity.startActivity(intent)
+    env.call_method(
+        &activity,
+        "startActivity",
+        "(Landroid/content/Intent;)V",
+        &[JValue::Object(&intent)],
+    )
+    .map_err(|e| format!("Failed to open the url: {:?}", e))?;
+
+    info!("Opened: {}", url);
+    Ok(())
+}
+
 /// Launch an app by its package name
 pub fn launch_app_jni(package_name: &str) -> Result<(), String> {
     let app_guard = get_android_app().ok_or("AndroidApp not initialized")?;

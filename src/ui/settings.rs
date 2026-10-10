@@ -224,18 +224,81 @@ impl RissApp {
                 }
             }
             "restart" => self.set_status("Settings applied — restart is not required"),
-            "export-settings" => self.set_status(format!(
-                "Settings are stored in {}",
-                storage::file_path(storage::SETTINGS_FILE).display()
-            )),
-            "import-settings" => self.set_status(format!(
-                "Replace {}, then restart RISS",
-                storage::file_path(storage::SETTINGS_FILE).display()
-            )),
+            "export-settings" => match export_backup(&self.settings, &self.history) {
+                Ok(path) => self.set_status(format!("Exported to {}", path.display())),
+                Err(error) => self.set_status(error),
+            },
+            "import-settings" => match import_backup() {
+                Ok((settings, history)) => {
+                    self.settings = settings;
+                    self.history = history;
+                    self.save_settings();
+                    self.save_history();
+                    self.reload_apps();
+                    self.set_status("Backup imported");
+                }
+                Err(error) => self.set_status(error),
+            },
             "default-launcher" => self.set_status("Choose RISS in your system’s default apps"),
             "rate-app" => self.set_status("Thank you for using RISS"),
-            "reset-shortcuts" | "reset-search-providers" => self.set_status("Provider data reset"),
+            "reset-shortcuts" => {
+                self.history.clear_all_shortcuts();
+                self.save_history();
+                self.set_status("Shortcuts cleared");
+            }
+            "reset-search-providers" => {
+                self.settings
+                    .values
+                    .insert("custom-search-provider-add".into(), String::new());
+                self.settings
+                    .values
+                    .insert("deleting-search-providers-names".into(), String::new());
+                self.settings.values.insert(
+                    "selected-search-provider-names".into(),
+                    "duckduckgo,google,wikipedia".into(),
+                );
+                self.settings
+                    .values
+                    .insert("default-search-provider".into(), "duckduckgo".into());
+                self.save_settings();
+                self.update_results();
+                self.set_status("Search providers reset");
+            }
             _ => self.set_status("Action completed"),
         }
     }
+}
+
+/// Export settings and history to a single backup file in the data directory.
+fn export_backup(
+    settings: &crate::settings::SettingsData,
+    history: &crate::history::HistoryData,
+) -> Result<std::path::PathBuf, String> {
+    let path = storage::file_path(storage::BACKUP_FILE);
+    let payload = serde_json::json!({
+        "settings": settings,
+        "history": history,
+    });
+    let text = serde_json::to_string_pretty(&payload)
+        .map_err(|error| format!("Export failed: {}", error))?;
+    std::fs::write(&path, text).map_err(|error| format!("Export failed: {}", error))?;
+    Ok(path)
+}
+
+/// Import a backup written by [`export_backup`].
+fn import_backup() -> Result<(crate::settings::SettingsData, crate::history::HistoryData), String> {
+    let path = storage::file_path(storage::BACKUP_FILE);
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("Import failed: {}", error))?;
+    let payload: serde_json::Value =
+        serde_json::from_str(&text).map_err(|error| format!("Import failed: {}", error))?;
+    let empty = serde_json::json!({});
+    let mut settings: crate::settings::SettingsData =
+        serde_json::from_value(payload.get("settings").unwrap_or(&empty).clone())
+            .map_err(|error| format!("Import failed: {}", error))?;
+    crate::settings::merge_defaults(&mut settings);
+    let history: crate::history::HistoryData =
+        serde_json::from_value(payload.get("history").unwrap_or(&empty).clone())
+            .map_err(|error| format!("Import failed: {}", error))?;
+    Ok((settings, history))
 }

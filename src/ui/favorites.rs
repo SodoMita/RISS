@@ -100,7 +100,7 @@ impl RissApp {
     /// app is gone.
     pub(super) fn favorite_display_name(&self, exec: &str) -> String {
         match self.favorite_state(exec).entry() {
-            Some(entry) => entry.name.clone(),
+            Some(entry) => self.display_name(entry),
             None => exec.to_string(),
         }
     }
@@ -392,7 +392,7 @@ impl RissApp {
                 ui.vertical(|ui| {
                     let name = state
                         .entry()
-                        .map(|entry| entry.name.clone())
+                        .map(|entry| self.display_name(entry))
                         .unwrap_or_else(|| exec.to_string());
                     ui.label(RichText::new(name).size(15.0).color(p.text));
                     if let Some(note) = state.note() {
@@ -442,7 +442,9 @@ impl RissApp {
             ui.label(RichText::new(hint).size(11.0).color(p.dim));
             return;
         }
-        let matches = self.search_engine.search(&query, &self.apps, 12);
+        let matches =
+            self.search_engine
+                .search(&query, &self.apps, &self.history.aliases, 12);
         if matches.is_empty() {
             let text = format!("No app matches “{query}”");
             let note = RichText::new(text).size(11.0).color(p.dim);
