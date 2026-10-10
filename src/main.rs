@@ -25,9 +25,6 @@ fn main() -> eframe::Result {
     // WindowMode::apply_startup (the transparent theme is the opt-in to
     // compositing the desktop wallpaper through).
     let viewport = egui::ViewportBuilder::default()
-        // Wayland app_id matching riss-launcher.desktop (issue #48), so
-        // compositors, docks and task switchers group the window correctly.
-        .with_app_id("riss-launcher")
         .with_inner_size([400.0, 600.0])
         .with_min_inner_size([300.0, 400.0]);
     let native_options = eframe::NativeOptions {
