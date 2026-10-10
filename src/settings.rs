@@ -123,6 +123,7 @@ fn default_bools() -> HashMap<String, bool> {
         ("enable-notifications", true),
         ("use-fuzzy-score-v1", false),
         ("root-mode", false),
+        ("osk-measure-height", true),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
@@ -221,8 +222,8 @@ const GESTURES: &[&str] = &[
     "launch-pojo",
 ];
 const SEARCH: &[&str] = &["duckduckgo", "google", "wikipedia", "brave", "bing"];
-const WINDOW_MODES: &[&str] = crate::ui::window_mode::WindowMode::KEYS;
-const OSK_SPACE: &[&str] = crate::ui::osk::OskSpaceMode::KEYS;
+const WINDOW_MODES: &[&str] = &["windowed", "maximized", "fullscreen"];
+const OSK_SPACE: &[&str] = &["auto", "always", "off"];
 
 macro_rules! s {
     ($section:expr,$key:expr,$title:expr,$kind:expr) => {
@@ -426,6 +427,12 @@ pub fn specs() -> Vec<SettingSpec> {
             "osk-space",
             "Keyboard space (desktop)",
             Choice(OSK_SPACE)
+        ),
+        s!(
+            "Keyboard",
+            "osk-measure-height",
+            "Measure keyboard height (desktop)",
+            Toggle
         ),
         s!(
             "Keyboard",

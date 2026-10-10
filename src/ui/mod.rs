@@ -13,7 +13,7 @@ mod colors;
 mod favorites;
 mod icons;
 pub(crate) mod insets;
-pub(crate) mod osk;
+mod osk;
 mod results;
 mod search_bar;
 mod settings;
@@ -66,12 +66,10 @@ pub struct RissApp {
     startup_notes: Vec<String>,
     /// Running countdown: total seconds and the start time.
     timer: Option<(u64, Instant)>,
-    /// Window area covered by the on-screen keyboard and system bars.
-    insets: insets::InsetTracker,
-    /// Space for the on-screen keyboard on desktops that cannot report it.
+    /// Room for on-screen keyboards on Linux desktops.
     osk: osk::OskTracker,
-    /// Window mode last applied from settings; changing the setting switches
-    /// the window, while a command-line override stays until then.
+    /// Window mode last applied from settings (a command-line override
+    /// stays until the setting changes).
     window_mode: WindowMode,
 }
 
@@ -118,10 +116,10 @@ impl RissApp {
             last_empty_tap: None,
             startup_notes,
             timer: None,
-            insets: insets::InsetTracker::new(&cc.egui_ctx),
             osk: osk::OskTracker::new(&cc.egui_ctx),
             window_mode,
         };
+        insets::watch(&cc.egui_ctx);
         app.reload_apps();
         app
     }
@@ -706,10 +704,8 @@ impl RissApp {
             0.0
         };
 
-        // Panels are laid out from the edges of the visible area (the window
-        // minus the insets reserved in `update`), so the search bar stays
-        // pinned right above the on-screen keyboard and results scroll in the
-        // space left above it.
+        // Panels are laid out inside the insets reserved in `update`, so the
+        // search bar sits right above the keyboard.
         egui::TopBottomPanel::bottom("launcher-search")
             .exact_height(search_height + status_height + 20.0)
             .frame(
@@ -770,13 +766,16 @@ impl eframe::App for RissApp {
         }
         #[cfg(not(target_os = "android"))]
         self.sync_window_mode(ctx);
-        // Reserve the parts of the window hidden behind the on-screen keyboard
-        // or system bars before laying out anything else. Android reports the
-        // exact area; desktops need an estimate when the compositor does not
-        // shrink the window for the keyboard (see `osk`).
-        let insets = self.insets.update(ctx);
+        // Keep clear of the keyboard and system bars before any other layout.
+        let insets = insets::current(ctx);
         #[cfg(not(target_os = "android"))]
-        let insets = insets.with_min_bottom(self.osk.reserved_height(ctx, &self.settings));
+        let insets = {
+            let (keyboard, measured) = self.osk.update(ctx, &mut self.settings);
+            if measured {
+                self.save_settings();
+            }
+            insets.with_min_bottom(keyboard)
+        };
         insets.reserve(ctx, p.bg);
         match self.screen {
             Screen::Launcher => self.show_launcher(ctx, p),
