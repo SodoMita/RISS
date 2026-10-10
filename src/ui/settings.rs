@@ -74,7 +74,7 @@ impl RissApp {
                             egui::Frame::NONE
                                 .fill(p.surface)
                                 .corner_radius(CornerRadius::same(8))
-                                .inner_margin(egui::Margin::symmetric(12, 6))
+                                .inner_margin(egui::Margin::symmetric(12, 8))
                                 .show(ui, |ui| match spec.kind {
                                     SettingKind::Toggle => {
                                         let value = self
@@ -82,13 +82,63 @@ impl RissApp {
                                             .bools
                                             .entry(spec.key.to_owned())
                                             .or_insert(false);
-                                        if ui.checkbox(value, spec.title).changed() {
-                                            changed = true;
-                                        }
+                                        ui.horizontal(|ui| {
+                                            let control_width = 30.0;
+                                            let text_width =
+                                                (ui.available_width() - control_width).max(50.0);
+                                            ui.allocate_ui(
+                                                egui::Vec2::new(text_width, 0.0),
+                                                |ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.label(
+                                                            RichText::new(spec.title)
+                                                                .color(p.text)
+                                                                .size(14.0),
+                                                        );
+                                                        if !spec.summary.is_empty() {
+                                                            ui.label(
+                                                                RichText::new(spec.summary)
+                                                                    .color(p.dim)
+                                                                    .size(11.0),
+                                                            );
+                                                        }
+                                                    });
+                                                },
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui.checkbox(value, "").changed() {
+                                                        changed = true;
+                                                    }
+                                                },
+                                            );
+                                        });
                                     }
                                     SettingKind::Choice(options) => {
                                         ui.horizontal(|ui| {
-                                            ui.label(spec.title);
+                                            let control_width = 150.0;
+                                            let text_width =
+                                                (ui.available_width() - control_width).max(50.0);
+                                            ui.allocate_ui(
+                                                egui::Vec2::new(text_width, 0.0),
+                                                |ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.label(
+                                                            RichText::new(spec.title)
+                                                                .color(p.text)
+                                                                .size(14.0),
+                                                        );
+                                                        if !spec.summary.is_empty() {
+                                                            ui.label(
+                                                                RichText::new(spec.summary)
+                                                                    .color(p.dim)
+                                                                    .size(11.0),
+                                                            );
+                                                        }
+                                                    });
+                                                },
+                                            );
                                             ui.with_layout(
                                                 egui::Layout::right_to_left(egui::Align::Center),
                                                 |ui| {
@@ -120,7 +170,28 @@ impl RissApp {
                                     }
                                     SettingKind::Number { min, max } => {
                                         ui.horizontal(|ui| {
-                                            ui.label(spec.title);
+                                            let control_width = 90.0;
+                                            let text_width =
+                                                (ui.available_width() - control_width).max(50.0);
+                                            ui.allocate_ui(
+                                                egui::Vec2::new(text_width, 0.0),
+                                                |ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.label(
+                                                            RichText::new(spec.title)
+                                                                .color(p.text)
+                                                                .size(14.0),
+                                                        );
+                                                        if !spec.summary.is_empty() {
+                                                            ui.label(
+                                                                RichText::new(spec.summary)
+                                                                    .color(p.dim)
+                                                                    .size(11.0),
+                                                            );
+                                                        }
+                                                    });
+                                                },
+                                            );
                                             ui.with_layout(
                                                 egui::Layout::right_to_left(egui::Align::Center),
                                                 |ui| {
@@ -148,33 +219,53 @@ impl RissApp {
                                         });
                                     }
                                     SettingKind::Text => {
-                                        ui.label(spec.title);
-                                        let value = self
-                                            .settings
-                                            .values
-                                            .entry(spec.key.to_owned())
-                                            .or_default();
-                                        if ui
-                                            .add(
-                                                egui::TextEdit::singleline(value)
-                                                    .desired_width(f32::INFINITY)
-                                                    .hint_text(spec.summary),
-                                            )
-                                            .changed()
-                                        {
-                                            changed = true;
-                                        }
+                                        ui.vertical(|ui| {
+                                            ui.label(
+                                                RichText::new(spec.title).color(p.text).size(14.0),
+                                            );
+                                            let value = self
+                                                .settings
+                                                .values
+                                                .entry(spec.key.to_owned())
+                                                .or_default();
+                                            if ui
+                                                .add(
+                                                    egui::TextEdit::singleline(value)
+                                                        .desired_width(f32::INFINITY)
+                                                        .hint_text(spec.summary),
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                        });
                                     }
                                     SettingKind::Action => {
-                                        if ui
-                                            .add_sized(
-                                                [ui.available_width(), 42.0],
-                                                egui::Button::new(spec.title),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.run_setting_action(spec.key);
-                                        }
+                                        ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    RichText::new(spec.title)
+                                                        .color(p.accent)
+                                                        .strong()
+                                                        .size(14.0),
+                                                );
+                                                if !spec.summary.is_empty() {
+                                                    ui.label(
+                                                        RichText::new(spec.summary)
+                                                            .color(p.dim)
+                                                            .size(11.0),
+                                                    );
+                                                }
+                                            });
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui.button("➔").clicked() {
+                                                        self.run_setting_action(spec.key);
+                                                    }
+                                                },
+                                            );
+                                        });
                                     }
                                 });
                             if changed {

@@ -6,16 +6,18 @@ use eframe::egui::{self, Color32, CornerRadius, FontId, Stroke};
 
 impl RissApp {
     pub(super) fn handle_keys(&mut self, ctx: &egui::Context) {
+        let back_pressed = ctx
+            .input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::BrowserBack));
         if self.screen == Screen::Settings {
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if back_pressed {
                 self.screen = Screen::Launcher;
             }
             return;
         }
         if self.screen == Screen::Favorites {
-            // Escape leaves the tag editor open on the first press, then goes
+            // Escape/Back leaves the tag editor open on the first press, then goes
             // back to wherever the favorites manager was opened from.
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if back_pressed {
                 if self.editing_tags.is_some() {
                     self.editing_tags = None;
                 } else {
@@ -24,7 +26,7 @@ impl RissApp {
             }
             return;
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if back_pressed {
             if !self.query.is_empty() {
                 self.query.clear();
             } else {
