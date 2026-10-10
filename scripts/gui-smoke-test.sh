@@ -46,8 +46,10 @@ run_session() {
         APP=$!
         sleep 8
         if kill -0 "$APP" 2>/dev/null; then
-            eval "$3" >>"$2" 2>&1
+            timeout 10 sh -c "$3" >>"$2" 2>&1
             kill "$APP" 2>/dev/null
+            sleep 2
+            kill -9 "$APP" 2>/dev/null
             wait "$APP" 2>/dev/null
             exit 0
         fi
@@ -63,7 +65,7 @@ case "$MODE" in
         command -v xvfb-run >/dev/null || fail "xvfb-run missing (apt install xvfb)"
         command -v import >/dev/null || fail "imagemagick import missing"
         xvfb-run -a -s "-screen 0 1280x720x24" \
-            bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "import -display \$DISPLAY -window root" \
+            timeout 60 bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "import -display \$DISPLAY -window root" \
             2>>"$LOG" || fail "Xvfb session failed (see log)"
         ;;
     wayland)
@@ -80,7 +82,7 @@ case "$MODE" in
             WLR_RENDERER_ALLOW_SOFTWARE=1 \
             LIBGL_ALWAYS_SOFTWARE=1 \
             GALLIUM_DRIVER=llvmpipe \
-            cage -- bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
+            timeout 90 cage -- bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
             2>>"$LOG"
         native=$?
         if [ -s "$SHOT" ]; then
@@ -95,7 +97,7 @@ case "$MODE" in
             WLR_BACKENDS=headless \
                 WLR_LIBINPUT_NO_DEVICES=1 \
                 WLR_RENDERER=pixman \
-                cage -- bash "$0" --run-child \
+                timeout 90 cage -- bash "$0" --run-child \
                     "env -u WAYLAND_DISPLAY DISPLAY=${DISPLAY:-:0} $(printf '%q' "$BIN")" \
                     "$LOG" "$SHOT" "grim" \
                 2>>"$LOG"
