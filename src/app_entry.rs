@@ -16,6 +16,8 @@ pub struct AppEntry {
     pub launch_count: u32,
     pub last_launched: u64,
     pub is_favorite: bool,
+    #[serde(default)]
+    pub is_system: bool,
 }
 
 impl AppEntry {
@@ -33,6 +35,7 @@ impl AppEntry {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: false,
         }
     }
 
@@ -79,6 +82,54 @@ impl AppEntry {
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to launch {}: {}", self.name, e))
+    }
+
+    /// Attempt to uninstall the application
+    pub fn uninstall(&self) -> Result<(), String> {
+        if self.is_system {
+            return Err(format!(
+                "{} is a system app and cannot be uninstalled",
+                self.name
+            ));
+        }
+        if self.desktop_file.is_file() {
+            if let Ok(metadata) = fs::metadata(&self.desktop_file) {
+                if !metadata.permissions().readonly() && fs::remove_file(&self.desktop_file).is_ok()
+                {
+                    return Ok(());
+                }
+            }
+        }
+        Err(format!("Cannot automatically uninstall {}", self.name))
+    }
+
+    /// Open app information
+    pub fn open_app_info(&self) -> Result<(), String> {
+        if self.desktop_file.is_file() {
+            if let Some(parent) = self.desktop_file.parent() {
+                open::that(parent).map_err(|e| format!("Failed to open app info: {e}"))
+            } else {
+                open::that(&self.desktop_file).map_err(|e| format!("Failed to open app info: {e}"))
+            }
+        } else {
+            Err("No desktop file found for app".to_string())
+        }
+    }
+
+    /// View application in store
+    pub fn view_in_store(&self) -> Result<(), String> {
+        let url = if self.exec.contains('.') && !self.exec.contains('/') {
+            format!(
+                "https://play.google.com/store/apps/details?id={}",
+                self.exec
+            )
+        } else {
+            format!(
+                "https://flathub.org/apps/search?q={}",
+                self.name.replace(' ', "+")
+            )
+        };
+        open::that(&url).map_err(|e| format!("Failed to open store: {e}"))
     }
 }
 
@@ -267,6 +318,8 @@ fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
         return None;
     }
 
+    let is_system = path.starts_with("/usr") || path.starts_with("/var");
+
     Some(AppEntry {
         name,
         comment,
@@ -278,6 +331,7 @@ fn parse_desktop_file(path: &Path) -> Option<AppEntry> {
         launch_count: 0,
         last_launched: 0,
         is_favorite: false,
+        is_system,
     })
 }
 
@@ -359,6 +413,7 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: true,
         },
         AppEntry {
             name: "Settings".to_string(),
@@ -371,6 +426,7 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: true,
         },
         AppEntry {
             name: "File Manager".to_string(),
@@ -383,6 +439,7 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: true,
         },
         AppEntry {
             name: "Terminal".to_string(),
@@ -399,6 +456,7 @@ pub fn builtin_entries() -> Vec<AppEntry> {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: true,
         },
     ]
 }
