@@ -454,12 +454,13 @@ pub fn open_url_jni(url: &str) -> Result<(), String> {
         .new_string(url)
         .map_err(|e| format!("Failed to create url string: {:?}", e))?
         .into();
-    let uri_class = env
-        .find_class("android/net/Uri")
-        .map_err(|e| format!("Uri class not found: {:?}", e))?;
+    // `Uri.parse` is a *static* method: looking the class up and then calling
+    // "parse" on the class object is an instance call on java.lang.Class, which
+    // never resolves — the intent silently failed and left a pending JNI
+    // exception behind (issue #59).
     let uri = env
-        .call_method(
-            &uri_class,
+        .call_static_method(
+            "android/net/Uri",
             "parse",
             "(Ljava/lang/String;)Landroid/net/Uri;",
             &[JValue::Object(&url_string)],
