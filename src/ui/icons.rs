@@ -53,8 +53,11 @@ fn cog_tooth(center: Pos2, angle: f32) -> Vec<Pos2> {
 /// Kiss ring, white on the all-apps bar, text color otherwise); hover/press
 /// feedback is a translucent wash of the same color.
 /// `show_glyph` implements KISS `pref-hide-circle`: the touch target stays
-/// clickable, only the glyph is hidden. `show_kiss_dot` controls whether the
-/// Kiss ring's center dot is shown (all-apps mode only).
+/// clickable, only the glyph is hidden. Hiding applies to the launcher circle
+/// alone — the settings cog and the clear (X) button keep their glyph, because
+/// KISS hides the circle and not the bar's other buttons (issue #55).
+/// `show_kiss_dot` controls whether the Kiss ring's center dot is shown
+/// (all-apps mode only).
 pub(super) fn bar_icon_button(
     ui: &mut egui::Ui,
     icon: BarIcon,
@@ -85,6 +88,7 @@ pub(super) fn bar_icon_button(
             painter.circle_filled(center, 17.0, feedback_fill(icon_color, 30));
         }
 
+        let show_glyph = show_glyph || !matches!(icon, BarIcon::Kiss);
         if show_glyph {
             match icon {
                 BarIcon::Kiss => {
