@@ -2,7 +2,7 @@
 
 A minimalist application launcher inspired by RISS Launcher for Android, built with Rust and egui. Works on Linux and can be adapted for other platforms.
 
-![RISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.70+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+![RISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.89+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
@@ -40,7 +40,7 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.89 or later — the committed `Cargo.lock` needs it (`uuid` 1.28 requires 1.89); `rust-version` in `Cargo.toml` now says so up front. Verified building and testing with 1.99.
 - Linux with X11 or Wayland
 - Required system libraries:
   ```bash
