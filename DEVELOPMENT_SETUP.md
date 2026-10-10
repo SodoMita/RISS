@@ -83,7 +83,8 @@ Each issue includes:
 ### Decision Points
 Before v0.3, the team needs to decide:
 1. Should RISS implement KISS-style providers (contacts, shortcuts, web search)?
-2. Should the "transparent" theme show the wallpaper or be renamed?
+2. ~~Should the "transparent" theme show the wallpaper or be renamed?~~
+   Decided: it shows the home-screen wallpaper on Android (issue #32).
 3. Is the INTERNET permission justified for Play Store distribution?
 
 ## Contributing
