@@ -79,9 +79,9 @@ impl RissApp {
                     // DataHandler.removeFromFavorites. Holding that same long
                     // press and dragging reorders the bar; Move and Edit tags
                     // in the menu are RISS additions.
-                    if response.long_touched() {
-                        egui::Popup::open_id(&response.ctx, popup_id);
-                    }
+                    // No explicit open for long-press: `secondary_clicked`
+                    // already includes touch holds, so the context menu below
+                    // opens with its pointer anchor on its own.
                     let exec = app.exec.clone();
                     response.context_menu(|ui| {
                         ui.set_min_width(210.0);
@@ -270,7 +270,7 @@ impl RissApp {
                 Stroke::NONE
             });
         let mut toggle = false;
-        let mut open_menu = false;
+        let mut kebab: Option<egui::Response> = None;
         let actions_width = if result.entry.is_virtual() { 0.0 } else { 60.0 };
         let shown = frame.show(ui, |ui| {
             ui.set_min_height(height - 12.0);
@@ -351,18 +351,14 @@ impl RissApp {
                             {
                                 toggle = true;
                             }
-                            if widgets::icon_button(
+                            kebab = Some(widgets::icon_button(
                                 ui,
                                 Icon::Kebab,
                                 28.0,
                                 p.dim,
                                 &p,
                                 "More actions",
-                            )
-                            .clicked()
-                            {
-                                open_menu = true;
-                            }
+                            ));
                         });
                     });
                 }
@@ -375,9 +371,6 @@ impl RissApp {
             click_rect.max.x -= actions_width;
             ui.interact(click_rect, shown.response.id, Sense::click())
         };
-        if open_menu {
-            egui::Popup::open_id(&response.ctx, egui::Popup::default_response_id(&response));
-        }
         if response.clicked() {
             self.selected_index = index;
             self.activate(index);
@@ -419,11 +412,13 @@ impl RissApp {
             };
             pin_labels.push((key, label));
         }
-        if response.long_touched() && !result.entry.is_virtual() {
-            egui::Popup::open_id(&response.ctx, egui::Popup::default_response_id(&response));
-        }
         if !result.entry.is_virtual() {
-            response.context_menu(|ui| {
+            // One menu, two doors (issue #65): right-click / long-press on
+            // the row, or the kebab button. `Popup::menu` toggles on the
+            // button's click and anchors to it, so no pointer position has
+            // to be stored by hand (the old `open_id` call stored none, and
+            // the menu never rendered).
+            let mut menu_content = |ui: &mut egui::Ui| {
                 ui.set_min_width(210.0);
                 ui.label(RichText::new(&shown_name).strong());
                 ui.separator();
@@ -531,7 +526,11 @@ impl RissApp {
                         .small()
                         .color(p.dim),
                 );
-            });
+            };
+            response.context_menu(|ui| menu_content(ui));
+            if let Some(kebab) = &kebab {
+                egui::Popup::menu(kebab).show(|ui| menu_content(ui));
+            }
         }
         if launch {
             self.activate(index);
@@ -775,5 +774,56 @@ impl RissApp {
                     }
                 })
             });
+    }
+}
+
+/// Kebab menus (issue #65) rely on `Popup::menu` toggling open when its
+/// button is clicked. Pins that contract headless: a press and release on
+/// the button must render the menu content on the click frame.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn button_menu_opens_on_click() {
+        let ctx = egui::Context::default();
+        let press_at = egui::pos2(100.0, 120.0);
+        let button_rect =
+            egui::Rect::from_min_size(press_at - egui::vec2(5.0, 5.0), egui::vec2(40.0, 20.0));
+        let frame_input = |pressed: Option<bool>| {
+            let mut events = vec![egui::Event::PointerMoved(press_at)];
+            if let Some(pressed) = pressed {
+                events.push(egui::Event::PointerButton {
+                    pos: press_at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            }
+        };
+        // Sticky across passes: `run` may execute the UI closure more than
+        // once per frame.
+        let mut menu_shown = false;
+        // Render, press, release: hit-testing needs the widget registered
+        // before the press lands.
+        for pressed in [None, Some(true), Some(false)] {
+            let _ = ctx.run(frame_input(pressed), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let button = ui.put(button_rect, egui::Button::new("\u{22ee}"));
+                    egui::Popup::menu(&button).show(|_| {
+                        menu_shown = true;
+                    });
+                });
+            });
+        }
+        assert!(menu_shown, "button menu never rendered after a click");
     }
 }
