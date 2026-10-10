@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 mod colors;
+mod icons;
 mod results;
 mod search_bar;
 mod settings;
