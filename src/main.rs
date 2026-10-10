@@ -21,18 +21,16 @@ fn main() -> eframe::Result {
     // Settings are needed before the window exists to open it in the right
     // mode (`--fullscreen` / `--maximized` / `--windowed` override them).
     let (settings, notes) = settings::SettingsData::load();
-    // Ask for a transparency capable framebuffer, like the Android entry
-    // point does: a plain window is RGB-only, so RissApp::clear_color can
-    // return alpha 0 and the compositor still shows an opaque slab. With an
-    // RGBA surface, Sway (and friends) composite the desktop wallpaper
-    // through whenever the transparent theme is on; opaque themes clear with
-    // full alpha, so nothing changes for them.
+    // The window mode and the alpha surface are both decided by
+    // WindowMode::apply_startup() below, from the same settings this builder is
+    // built with: asking for RGBA unconditionally would give light and dark
+    // themes an alpha channel they never paint through, and asking only here
+    // (or only in lib.rs) is how one half of the feature went missing before.
     let viewport = egui::ViewportBuilder::default()
         .with_inner_size([400.0, 600.0])
-        .with_min_inner_size([300.0, 400.0])
-        .with_transparent(true);
+        .with_min_inner_size([300.0, 400.0]);
     let native_options = eframe::NativeOptions {
-        viewport: ui::window_mode::WindowMode::at_startup(&settings).apply_to_builder(viewport),
+        viewport: ui::window_mode::WindowMode::apply_startup(&settings, viewport),
         ..Default::default()
     };
 

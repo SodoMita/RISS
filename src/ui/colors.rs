@@ -18,14 +18,31 @@ pub(super) struct Palette {
     pub(super) border: Color32,
 }
 
-/// Should the system wallpaper be visible behind the launcher?
+/// Can this platform give the launcher window an alpha channel at all?
 ///
-/// On Android the launcher *is* the home screen: the wallpaper belongs to the
-/// system, so the window has to be transparent for it to be seen at all (issue
-/// #32). Desktop windows keep the solid palette — there the launcher is an
-/// ordinary window and a transparent one needs a compositing window manager.
+/// On Android the launcher *is* the home screen, so the wallpaper belongs to the
+/// system and the window has to be transparent for it to be seen at all (issue
+/// #32). A desktop window can do the same — an X11 compositor blends the window
+/// over the root pixmap, and a Wayland compositor simply shows the wallpaper
+/// layer behind it — but it only works if one is running. Rather than probe for
+/// a compositor, the transparent theme is treated as the user's opt-in: picking
+/// it is asking to see the desktop through the launcher.
+///
+/// Windows and macOS stay solid: the alpha paths there (`WS_EX_LAYERED` plus
+/// `UpdateLayeredWindow`, or a borderless `NSWindow`) are not implemented.
+pub(super) fn transparent_window_supported() -> bool {
+    cfg!(any(
+        target_os = "android",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))
+}
+
+/// Should the system wallpaper be visible behind the launcher?
 pub(super) fn wallpaper_visible(settings: &SettingsData) -> bool {
-    wallpaper_visible_on(settings, cfg!(target_os = "android"))
+    wallpaper_visible_on(settings, transparent_window_supported())
 }
 
 /// The same question with the platform capability (`transparent_window`) passed
@@ -41,7 +58,7 @@ pub(super) fn wallpaper_visible_on(settings: &SettingsData, transparent_window: 
 
 impl Palette {
     pub(super) fn from_settings(settings: &SettingsData) -> Self {
-        Self::for_platform(settings, cfg!(target_os = "android"))
+        Self::for_platform(settings, transparent_window_supported())
     }
 
     fn for_platform(settings: &SettingsData, transparent_window: bool) -> Self {
@@ -182,6 +199,23 @@ mod tests {
             let palette = Palette::for_platform(&settings, true);
             assert_eq!(palette.panel, palette.bg, "{theme} is solid");
         }
+    }
+
+    #[test]
+    fn the_desktop_follows_the_preference_not_the_platform() {
+        // The theme choice, not an OS whitelist, decides on a desktop: picking
+        // the transparent theme is the opt-in to compositing (issue #32).
+        assert!(
+            transparent_window_supported(),
+            "linux and android both expose alpha-capable windows"
+        );
+        let settings = settings_with("transparent", "show");
+        assert!(wallpaper_visible(&settings));
+        assert_eq!(
+            Palette::from_settings(&settings).panel,
+            Color32::TRANSPARENT,
+            "the palette and the window must agree"
+        );
     }
 
     #[test]
