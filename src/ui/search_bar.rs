@@ -1,29 +1,80 @@
 use super::{Palette, RissApp, Screen};
 use eframe::egui::{self, Color32, CornerRadius, FontId, RichText, Stroke, Vec2};
 
+/// The keys the launcher reacts to, collected in a single read of egui's
+/// input state instead of one read per key.
+struct NavKeys {
+    up: bool,
+    down: bool,
+    page_up: bool,
+    page_down: bool,
+    home: bool,
+    end: bool,
+    enter: bool,
+    escape: bool,
+}
+
 impl RissApp {
+    /// Rows per page for the paging keys.
+    const PAGE_STEP: usize = 8;
+
     pub(super) fn handle_keys(&mut self, ctx: &egui::Context) {
+        // One `ctx.input` call, not one per key: each one locks egui's input
+        // state, and this ran seven times per frame for keys the user is
+        // mostly not pressing.
+        let keys = ctx.input(|i| NavKeys {
+            up: i.key_pressed(egui::Key::ArrowUp),
+            down: i.key_pressed(egui::Key::ArrowDown),
+            page_up: i.key_pressed(egui::Key::PageUp),
+            page_down: i.key_pressed(egui::Key::PageDown),
+            home: i.key_pressed(egui::Key::Home),
+            end: i.key_pressed(egui::Key::End),
+            enter: i.key_pressed(egui::Key::Enter),
+            escape: i.key_pressed(egui::Key::Escape),
+        });
         if self.screen == Screen::Settings {
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if keys.escape {
                 self.screen = Screen::Launcher;
             }
             return;
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if keys.escape {
             if !self.query.is_empty() {
                 self.query.clear();
             } else {
                 self.show_all_apps = false;
             }
             self.update_results();
+            return;
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        let last = self.results.len().saturating_sub(1);
+        let before = self.selected_index;
+        if keys.up {
             self.selected_index = self.selected_index.saturating_sub(1);
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !self.results.is_empty() {
-            self.selected_index = (self.selected_index + 1).min(self.results.len() - 1);
+        if keys.down && !self.results.is_empty() {
+            self.selected_index = (self.selected_index + 1).min(last);
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !self.results.is_empty() {
+        // Paging keys, so a keyboard can cross a long app list without
+        // stepping through it one row at a time.
+        if keys.page_up {
+            self.selected_index = self.selected_index.saturating_sub(Self::PAGE_STEP);
+        }
+        if keys.page_down {
+            self.selected_index = (self.selected_index + Self::PAGE_STEP).min(last);
+        }
+        if keys.home && !self.results.is_empty() {
+            self.selected_index = 0;
+        }
+        if keys.end && !self.results.is_empty() {
+            self.selected_index = last;
+        }
+        if self.selected_index != before {
+            // Scroll the highlighted row along, which the list otherwise has
+            // no reason to do: it is not the row under the finger.
+            self.list_follow_selection = true;
+        }
+        if keys.enter && !self.results.is_empty() {
             self.launch_result(self.selected_index);
         }
     }

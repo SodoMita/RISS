@@ -52,8 +52,31 @@ fn parse_hex(value: &str) -> Option<Color32> {
     Some(Color32::from_rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
 }
 
+/// FNV-1a over the settings that decide the look. Equal keys mean an equal
+/// result, which is what lets [`RissApp::apply_visuals`] skip its work.
+fn visuals_key(settings: &SettingsData) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for key in ["theme", "night-mode", "primary-color"] {
+        for byte in settings.value(key).as_bytes() {
+            hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash = (hash ^ 0x1f).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 impl RissApp {
-    pub(super) fn apply_visuals(&self, ctx: &egui::Context, p: Palette) {
+    /// Push the palette into egui's `Visuals` and `Style`.
+    ///
+    /// This runs once per appearance change rather than once per frame:
+    /// rebuilding `Visuals` and cloning the whole `Style` on every repaint is
+    /// pure overhead when nothing about the theme moved.
+    pub(super) fn apply_visuals(&mut self, ctx: &egui::Context, p: Palette) {
+        let key = visuals_key(&self.settings);
+        if self.visuals_key == Some(key) {
+            return;
+        }
+        self.visuals_key = Some(key);
         let mut visuals = if self.settings.value("theme") == "light" {
             egui::Visuals::light()
         } else {
@@ -70,6 +93,11 @@ impl RissApp {
         let mut style = (*ctx.style()).clone();
         style.spacing.interact_size.y = 44.0;
         style.spacing.button_padding = Vec2::new(14.0, 10.0);
+        // egui animates widget colours (and the scroll bar fade) over
+        // `animation_time`, and each animated step is another full repaint of
+        // the launcher. On a phone the fade is invisible anyway, so it is
+        // switched off to keep scrolling to the frames the user actually caused.
+        style.animation_time = 0.0;
         ctx.set_style(style);
     }
 }
