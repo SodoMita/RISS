@@ -2,50 +2,14 @@ use super::favorites::FavoriteAction;
 use super::widgets::{self, Icon};
 use super::{Palette, RissApp};
 #[cfg(target_os = "android")]
-use crate::android_app_entry::{self as app_entry, AppEntry};
+use crate::android_app_entry::AppEntry;
 #[cfg(not(target_os = "android"))]
-use crate::app_entry::{self, AppEntry};
+use crate::app_entry::AppEntry;
 use crate::search::{self, MatchType, SearchResult};
 use eframe::egui::{self, Color32, CornerRadius, FontId, RichText, Sense, Stroke, Vec2};
 use std::time::Instant;
 
 impl RissApp {
-    fn icon_texture(&mut self, ctx: &egui::Context, entry: &AppEntry) -> Option<egui::TextureId> {
-        let key = if entry.icon.trim().is_empty() {
-            entry.exec.clone()
-        } else {
-            entry.icon.clone()
-        };
-        if let Some(texture) = self.icon_textures.get(&key) {
-            return Some(texture.id());
-        }
-        if self.icons_without_image.contains(&key) {
-            return None;
-        }
-
-        let Some((width, height, rgba)) = app_entry::load_icon_rgba(entry) else {
-            self.icons_without_image.insert(key);
-            return None;
-        };
-        let valid_size = width
-            .checked_mul(height)
-            .and_then(|pixels| pixels.checked_mul(4));
-        if width == 0 || height == 0 || valid_size != Some(rgba.len()) {
-            self.icons_without_image.insert(key);
-            return None;
-        }
-
-        let image = egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba);
-        let texture = ctx.load_texture(
-            format!("app-icon:{key}"),
-            image,
-            egui::TextureOptions::LINEAR,
-        );
-        let id = texture.id();
-        self.icon_textures.insert(key, texture);
-        Some(id)
-    }
-
     pub(super) fn show_favorites(&mut self, ui: &mut egui::Ui, p: Palette) {
         let favorites = self.favorite_bar_entries();
         if favorites.is_empty() {
@@ -73,7 +37,7 @@ impl RissApp {
                     let response = response.on_hover_text(shown_name.as_str());
                     let icon_texture =
                         if !self.settings.enabled("icons-hide") && ui.is_rect_visible(rect) {
-                            self.icon_texture(ui.ctx(), app)
+                            self.icons.texture(ui.ctx(), app)
                         } else {
                             None
                         };
@@ -281,7 +245,7 @@ impl RissApp {
             && !result.entry.is_virtual()
             && ui.is_rect_visible(icon_check_rect)
         {
-            self.icon_texture(ui.ctx(), &result.entry)
+            self.icons.texture(ui.ctx(), &result.entry)
         } else {
             None
         };
@@ -793,8 +757,7 @@ impl RissApp {
                         let icon = self.icon_input.trim().to_owned();
                         self.history.set_custom_icon(exec, icon);
                         self.save_history();
-                        self.icon_textures.clear();
-                        self.icons_without_image.clear();
+                        self.icons.clear();
                         self.editing_icon = None;
                         self.reload_apps();
                         self.set_status("Custom icon set");
@@ -802,8 +765,7 @@ impl RissApp {
                     if ui.button("Reset").clicked() {
                         self.history.set_custom_icon(exec, String::new());
                         self.save_history();
-                        self.icon_textures.clear();
-                        self.icons_without_image.clear();
+                        self.icons.clear();
                         self.editing_icon = None;
                         self.reload_apps();
                         self.set_status("Icon reset to default");
