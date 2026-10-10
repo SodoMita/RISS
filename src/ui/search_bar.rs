@@ -50,14 +50,14 @@ impl RissApp {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     // KISS layout (`main.xml` + `InterfaceTweaks`): the
-                    // launcher circle is always accent-tinted; menu/clear use
-                    // the search (text) color, or the accent color when the
-                    // search bar is transparent.
+                    // launcher circle is always accent-tinted; settings/clear
+                    // use the search (text) color, or the accent color when
+                    // the search bar is transparent.
                     let swap = self.settings.enabled("pref-swap-kiss-button-with-menu");
                     let show_glyph = !self.settings.enabled("pref-hide-circle");
                     let menu_color = if transparent { p.accent } else { p.text };
                     let (left_icon, left_tooltip) = if swap {
-                        (BarIcon::Menu, "Settings")
+                        (BarIcon::Cog, "Settings")
                     } else {
                         (BarIcon::Kiss, "All apps")
                     };
@@ -66,14 +66,8 @@ impl RissApp {
                     } else {
                         menu_color
                     };
-                    let left_response = bar_icon_button(
-                        ui,
-                        left_icon,
-                        left_color,
-                        p.hover,
-                        left_tooltip,
-                        show_glyph,
-                    );
+                    let left_response =
+                        bar_icon_button(ui, left_icon, left_color, left_tooltip, show_glyph);
                     if left_response.clicked() {
                         if swap {
                             self.screen = Screen::Settings;
@@ -99,28 +93,22 @@ impl RissApp {
                         self.show_all_apps = false;
                         self.update_results();
                     }
-                    // KISS swaps the menu button for a clear (X) button while
-                    // a query is typed.
+                    // KISS swaps the settings button for a clear (X) button
+                    // while a query is typed.
                     let (right_icon, right_tooltip) = if !self.query.is_empty() {
                         (BarIcon::Clear, "Clear")
                     } else if swap {
                         (BarIcon::Kiss, "All apps")
                     } else {
-                        (BarIcon::Menu, "Settings")
+                        (BarIcon::Cog, "Settings")
                     };
                     let right_color = if right_icon == BarIcon::Kiss {
                         p.accent
                     } else {
                         menu_color
                     };
-                    let right_response = bar_icon_button(
-                        ui,
-                        right_icon,
-                        right_color,
-                        p.hover,
-                        right_tooltip,
-                        show_glyph,
-                    );
+                    let right_response =
+                        bar_icon_button(ui, right_icon, right_color, right_tooltip, show_glyph);
                     if right_response.clicked() {
                         if !self.query.is_empty() {
                             self.query.clear();
