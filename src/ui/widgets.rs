@@ -483,11 +483,10 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
                 crescent.push(center + Vec2::new(angle.cos(), angle.sin()) * (r * 0.85));
             }
             painter.add(Shape::convex_polygon(crescent, color, Stroke::NONE));
-            painter.circle_filled(
-                center + Vec2::new(r * 0.42, -r * 0.28),
-                r * 0.75,
-                bg_color_of(ui),
-            );
+            // The carve-out must use the solid theme colour: `panel_fill` is
+            // transparent while the wallpaper shows through, and a transparent
+            // circle would leave the moon a full disc.
+            painter.circle_filled(center + Vec2::new(r * 0.42, -r * 0.28), r * 0.75, bg);
         }
         Icon::Filter => {
             painter.add(Shape::convex_polygon(
@@ -555,11 +554,6 @@ pub fn draw_icon(ui: &mut Ui, icon: Icon, center: Pos2, size: f32, color: Color3
             ));
         }
     }
-}
-
-/// The background colour currently used by the window; used to "punch holes".
-fn bg_color_of(ui: &Ui) -> Color32 {
-    ui.visuals().panel_fill
 }
 
 /// Draw an outlined rectangle without relying on `Painter::rect_stroke`

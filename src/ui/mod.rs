@@ -655,11 +655,13 @@ impl RissApp {
 
         // Panels are laid out from the window edges, so the search bar stays
         // above the Android keyboard and pinned to the bottom on every resize.
+        // They are painted with `p.panel`, which is transparent whenever the
+        // home-screen wallpaper should show through behind the results.
         egui::TopBottomPanel::bottom("launcher-search")
             .exact_height(search_height + status_height + 20.0)
             .frame(
                 egui::Frame::NONE
-                    .fill(p.bg)
+                    .fill(p.panel)
                     .inner_margin(egui::Margin::same(10)),
             )
             .show(ctx, |ui| {
@@ -676,7 +678,7 @@ impl RissApp {
                 .exact_height(favorites_height + 8.0)
                 .frame(
                     egui::Frame::NONE
-                        .fill(p.bg)
+                        .fill(p.panel)
                         .inner_margin(egui::Margin::symmetric(10, 4)),
                 )
                 .show(ctx, |ui| self.show_favorites(ui, p));
@@ -685,7 +687,7 @@ impl RissApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::NONE
-                    .fill(p.bg)
+                    .fill(p.panel)
                     .inner_margin(egui::Margin::same(10)),
             )
             .show(ctx, |ui| {
@@ -719,6 +721,18 @@ impl eframe::App for RissApp {
         }
         if self.status_message.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
+        }
+    }
+
+    /// eframe clears the framebuffer with a nearly opaque dark grey, which
+    /// would cover the home-screen wallpaper even when every panel is
+    /// transparent — so clear with alpha 0 whenever the wallpaper shows
+    /// through.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        if colors::wallpaper_visible(&self.settings) {
+            egui::Color32::TRANSPARENT.to_normalized_gamma_f32()
+        } else {
+            visuals.window_fill().to_normalized_gamma_f32()
         }
     }
 }
