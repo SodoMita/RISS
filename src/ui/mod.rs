@@ -11,12 +11,15 @@ use std::time::{Duration, Instant};
 
 mod colors;
 pub(crate) mod insets;
+pub(crate) mod osk;
 mod results;
 mod search_bar;
 mod settings;
 mod touch;
+pub(crate) mod window_mode;
 
 use colors::Palette;
+use window_mode::WindowMode;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
@@ -48,13 +51,29 @@ pub struct RissApp {
     startup_notes: Vec<String>,
     /// Window area covered by the on-screen keyboard and system bars.
     insets: insets::InsetTracker,
+    /// Space for the on-screen keyboard on desktops that cannot report it.
+    osk: osk::OskTracker,
+    /// Window mode last applied from settings; changing the setting switches
+    /// the window, while a command-line override stays until then.
+    window_mode: WindowMode,
 }
 
 impl RissApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let (settings, mut startup_notes) = SettingsData::load();
+        let (settings, notes) = SettingsData::load();
+        Self::with_settings(cc, settings, notes)
+    }
+
+    /// Create the app from settings the caller already loaded (the desktop
+    /// entry point needs them to pick the initial window mode).
+    pub fn with_settings(
+        cc: &eframe::CreationContext<'_>,
+        settings: SettingsData,
+        mut startup_notes: Vec<String>,
+    ) -> Self {
         let (history, history_notes) = HistoryData::load();
         startup_notes.extend(history_notes);
+        let window_mode = WindowMode::from_settings(&settings);
         let mut app = Self {
             query: String::new(),
             all_apps: Vec::new(),
@@ -76,6 +95,8 @@ impl RissApp {
             last_empty_tap: None,
             startup_notes,
             insets: insets::InsetTracker::new(&cc.egui_ctx),
+            osk: osk::OskTracker::new(&cc.egui_ctx),
+            window_mode,
         };
         app.reload_apps();
         app
@@ -300,6 +321,15 @@ impl RissApp {
         }
     }
 
+    /// Follow changes of the `window-mode` setting.
+    fn sync_window_mode(&mut self, ctx: &egui::Context) {
+        let wanted = WindowMode::from_settings(&self.settings);
+        if wanted != self.window_mode {
+            wanted.apply_to_window(ctx);
+            self.window_mode = wanted;
+        }
+    }
+
     fn show_launcher(&mut self, ctx: &egui::Context, p: Palette) {
         let search_height = if self.settings.enabled("large-search-bar") {
             92.0
@@ -386,9 +416,16 @@ impl eframe::App for RissApp {
             let notes = std::mem::take(&mut self.startup_notes);
             self.set_status(notes.join(" • "));
         }
+        #[cfg(not(target_os = "android"))]
+        self.sync_window_mode(ctx);
         // Reserve the parts of the window hidden behind the on-screen keyboard
-        // or system bars before laying out anything else.
-        self.insets.update(ctx).reserve(ctx, p.bg);
+        // or system bars before laying out anything else. Android reports the
+        // exact area; desktops need an estimate when the compositor does not
+        // shrink the window for the keyboard (see `osk`).
+        let insets = self.insets.update(ctx);
+        #[cfg(not(target_os = "android"))]
+        let insets = insets.with_min_bottom(self.osk.reserved_height(ctx, &self.settings));
+        insets.reserve(ctx, p.bg);
         match self.screen {
             Screen::Launcher => self.show_launcher(ctx, p),
             Screen::Settings => self.show_settings(ctx, p),

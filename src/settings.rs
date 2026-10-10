@@ -169,6 +169,11 @@ fn default_values() -> HashMap<String, String> {
         ("edit-excluded-app-shortcuts", ""),
         ("selected-contact-mime-types", "phone,email"),
         ("widget-spacing", "0"),
+        // RISS desktop additions.
+        ("window-mode", "windowed"),
+        ("osk-space", "auto"),
+        ("osk-height-portrait", "40"),
+        ("osk-height-landscape", "50"),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v.to_owned()))
@@ -213,6 +218,8 @@ const GESTURES: &[&str] = &[
     "launch-pojo",
 ];
 const SEARCH: &[&str] = &["duckduckgo", "google", "wikipedia", "brave", "bing"];
+const WINDOW_MODES: &[&str] = crate::ui::window_mode::WindowMode::KEYS;
+const OSK_SPACE: &[&str] = crate::ui::osk::OskSpaceMode::KEYS;
 
 macro_rules! s {
     ($section:expr,$key:expr,$title:expr,$kind:expr) => {
@@ -410,6 +417,24 @@ pub fn specs() -> Vec<SettingSpec> {
             "Hide keyboard after launch",
             Toggle
         ),
+        s!(
+            "Keyboard",
+            "osk-space",
+            "Keyboard space (desktop)",
+            Choice(OSK_SPACE)
+        ),
+        s!(
+            "Keyboard",
+            "osk-height-portrait",
+            "Keyboard height, portrait %",
+            Number { min: 10, max: 80 }
+        ),
+        s!(
+            "Keyboard",
+            "osk-height-landscape",
+            "Keyboard height, landscape %",
+            Number { min: 10, max: 80 }
+        ),
         s!("Minimal mode", "history-hide", "Hide history", Toggle),
         s!(
             "Minimal mode",
@@ -506,6 +531,12 @@ pub fn specs() -> Vec<SettingSpec> {
             Choice(SORT)
         ),
         s!("Behavior", "force-portrait", "Force portrait", Toggle),
+        s!(
+            "Behavior",
+            "window-mode",
+            "Window mode (desktop)",
+            Choice(WINDOW_MODES)
+        ),
         s!(
             "Behavior",
             "call-contact-on-click",

@@ -98,6 +98,14 @@ impl ScreenInsets {
             && screen.y - self.top - self.bottom >= screen.y * min
     }
 
+    /// These insets with at least `bottom` points kept free at the bottom.
+    pub fn with_min_bottom(self, bottom: f32) -> Self {
+        Self {
+            bottom: self.bottom.max(bottom),
+            ..self
+        }
+    }
+
     pub fn is_zero(&self) -> bool {
         *self == Self::default()
     }

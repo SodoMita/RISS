@@ -68,19 +68,23 @@ fn android_main(app: AndroidApp) {
 // Desktop entry point
 #[cfg(not(target_os = "android"))]
 fn main() -> eframe::Result {
+    // Settings are needed before the window exists to open it in the right
+    // mode (`--fullscreen` / `--maximized` / `--windowed` override them).
+    let (settings, notes) = settings::SettingsData::load();
+    let viewport = egui::ViewportBuilder::default()
+        .with_inner_size([400.0, 600.0])
+        .with_min_inner_size([300.0, 400.0]);
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 600.0])
-            .with_min_inner_size([300.0, 400.0]),
+        viewport: ui::window_mode::WindowMode::at_startup(&settings).apply_to_builder(viewport),
         ..Default::default()
     };
 
     eframe::run_native(
         "RISS Launcher",
         native_options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             ui::setup_fonts(&cc.egui_ctx);
-            Ok(Box::new(ui::RissApp::new(cc)))
+            Ok(Box::new(ui::RissApp::with_settings(cc, settings, notes)))
         }),
     )
 }
