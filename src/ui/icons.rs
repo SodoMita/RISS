@@ -4,10 +4,10 @@ use eframe::egui::{self, Color32, Pos2, Shape, Stroke, Vec2};
 /// deliberate deviation: the settings button is a cog, not KISS's kebab
 /// (`dots.xml`).
 ///
-/// * `Kiss` — the hollow circle from `ic_launcher_white.xml`, tinted with the
+/// * `Kiss` — the ring from `ic_launcher_white.xml` plus a filled center
+///   circle (our addition; KISS keeps the ring hollow), tinted with the
 ///   primary/accent color (white on the all-apps "kiss bar"). Opens the app
-///   list; while it is open the ring gets a filled center circle (our
-///   addition — KISS keeps the ring hollow).
+///   list.
 /// * `Cog` — settings gear, tinted with the search (text) color. Opens
 ///   settings.
 /// * `Clear` — the X from `ic_close.xml`, tinted with the search color.
@@ -19,10 +19,7 @@ use eframe::egui::{self, Color32, Pos2, Shape, Stroke, Vec2};
 /// feathering around every shape on top of that.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum BarIcon {
-    Kiss {
-        /// Fill the ring center while the all-apps list is open.
-        filled_center: bool,
-    },
+    Kiss,
     Cog,
     Clear,
 }
@@ -89,14 +86,14 @@ pub(super) fn bar_icon_button(
 
         if show_glyph {
             match icon {
-                BarIcon::Kiss { filled_center } => {
+                BarIcon::Kiss => {
                     // `ic_launcher_white.xml`: outer diameter is 87% of the
                     // box, stroke 14%. r=9, w=3 (Ø 87.5%, stroke 12.5%) is
-                    // the closest whole-pixel match.
+                    // the closest whole-pixel match. The filled r=5 center
+                    // (half the ring's outer diameter) is ours; KISS keeps
+                    // the ring hollow.
                     painter.circle_stroke(center, 9.0, Stroke::new(3.0_f32, icon_color));
-                    if filled_center {
-                        painter.circle_filled(center, 5.0, icon_color);
-                    }
+                    painter.circle_filled(center, 5.0, icon_color);
                 }
                 BarIcon::Cog => {
                     // Hollow hub ring with six flat-cut teeth. Outer extent

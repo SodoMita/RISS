@@ -41,8 +41,8 @@ impl RissApp {
         let all_apps = self.show_all_apps;
         // All-apps mode copies KISS's "kiss bar" (`main_kissbar.xml` +
         // `rounded_kiss_bar.xml`): solid `?attr/colorPrimary` fill, no
-        // outline, white glyphs. The filled ring center is our own addition
-        // (KISS keeps the ring hollow).
+        // outline, white glyphs. (The ring's filled center is always drawn;
+        // it is our own addition — KISS keeps the ring hollow.)
         let bar_fill = if all_apps {
             p.accent
         } else if transparent {
@@ -77,27 +77,14 @@ impl RissApp {
                     } else {
                         p.text
                     };
-                    let kiss = if all_apps {
-                        (
-                            BarIcon::Kiss {
-                                filled_center: true,
-                            },
-                            "History",
-                        )
-                    } else {
-                        (
-                            BarIcon::Kiss {
-                                filled_center: false,
-                            },
-                            "All apps",
-                        )
-                    };
+                    let kiss_tooltip = if all_apps { "History" } else { "All apps" };
+                    let kiss = (BarIcon::Kiss, kiss_tooltip);
                     let (left_icon, left_tooltip) = if swap {
                         (BarIcon::Cog, "Settings")
                     } else {
                         kiss
                     };
-                    let left_color = if matches!(left_icon, BarIcon::Kiss { .. }) {
+                    let left_color = if left_icon == BarIcon::Kiss {
                         kiss_color
                     } else {
                         menu_color
@@ -143,7 +130,7 @@ impl RissApp {
                     } else {
                         (BarIcon::Cog, "Settings")
                     };
-                    let right_color = if matches!(right_icon, BarIcon::Kiss { .. }) {
+                    let right_color = if right_icon == BarIcon::Kiss {
                         kiss_color
                     } else {
                         menu_color
