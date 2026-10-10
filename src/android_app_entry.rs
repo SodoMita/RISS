@@ -18,6 +18,8 @@ pub struct AppEntry {
     pub launch_count: u32,
     pub last_launched: u64,
     pub is_favorite: bool,
+    #[serde(default)]
+    pub is_system: bool,
 }
 
 impl AppEntry {
@@ -35,6 +37,7 @@ impl AppEntry {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: false,
         }
     }
 
@@ -67,15 +70,56 @@ impl AppEntry {
             Err("Not on Android".to_string())
         }
     }
+
+    pub fn uninstall(&self) -> Result<(), String> {
+        #[cfg(target_os = "android")]
+        {
+            android_jni::uninstall_app_jni(&self.exec)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            Err("Not on Android".to_string())
+        }
+    }
+
+    pub fn open_app_info(&self) -> Result<(), String> {
+        #[cfg(target_os = "android")]
+        {
+            android_jni::open_app_info_jni(&self.exec)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            Err("Not on Android".to_string())
+        }
+    }
+
+    pub fn view_in_store(&self) -> Result<(), String> {
+        #[cfg(target_os = "android")]
+        {
+            android_jni::view_in_store_jni(&self.exec)
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            Err("Not on Android".to_string())
+        }
+    }
 }
 
 pub type IconPixels = (usize, usize, Vec<u8>);
 
-/// Load an Android application's icon using its package name.
+/// Load an Android application's icon using its package name or custom icon.
 pub fn load_icon_rgba(entry: &AppEntry) -> Option<IconPixels> {
     #[cfg(target_os = "android")]
     {
-        android_jni::load_app_icon_jni(&entry.exec)
+        let icon_pkg = if entry.icon.trim().is_empty() {
+            &entry.exec
+        } else {
+            &entry.icon
+        };
+        android_jni::load_app_icon_jni(icon_pkg)
     }
 
     #[cfg(not(target_os = "android"))]
