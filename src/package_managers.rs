@@ -394,6 +394,59 @@ fn require_tool(tool: &str) -> Result<(), String> {
     }
 }
 
+/// How a command that needs administrator rights can be run at all. Kept as a
+/// separate decision so the escalation logic is testable on a machine with no
+/// package manager, and so every backend asks the same question instead of only
+/// the distro one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Escalation {
+    Pkexec,
+    Sudo,
+    None,
+}
+
+impl Escalation {
+    fn detect() -> Self {
+        if providers::command_exists("pkexec") {
+            Self::Pkexec
+        } else if providers::command_exists("sudo") {
+            Self::Sudo
+        } else {
+            Self::None
+        }
+    }
+
+    /// Wrap `remove` so it can actually run as root, or say why it cannot.
+    ///
+    /// `label` names the backend in the error. Without this wrapper the plan
+    /// still "succeeded": the command was spawned detached with its output
+    /// discarded, so a refusal from snapd or a system-scope flatpak looked
+    /// identical to a removal in progress (issue #67).
+    /// A command that runs as the current user, for the scopes that allow it.
+    fn wrap_no_privilege(remove: Vec<String>) -> Action {
+        Action::Spawn(remove)
+    }
+
+    fn wrap(self, remove: Vec<String>, label: &str, what: &str) -> Result<Action, String> {
+        match self {
+            Self::Pkexec => {
+                let mut argv = vec!["pkexec".to_string()];
+                argv.extend(remove);
+                Ok(Action::Spawn(argv))
+            }
+            Self::Sudo => {
+                let mut argv = vec!["sudo".to_string()];
+                argv.extend(remove);
+                Ok(Action::Terminal(argv))
+            }
+            Self::None => Err(format!(
+                "Removing {what} needs administrator rights, and neither pkexec nor sudo was found \
+                 ({label})"
+            )),
+        }
+    }
+}
+
 /// Build the uninstall operation for an app, failing when RISS cannot tell
 /// how the app was installed or the required tooling is missing.
 pub fn plan(entry: &AppEntry) -> Result<Plan, String> {
@@ -415,27 +468,35 @@ pub fn plan(entry: &AppEntry) -> Result<Plan, String> {
                 "uninstall".to_string(),
                 "-y".to_string(),
                 scope.to_string(),
-                app_id,
+                app_id.clone(),
             ];
+            // A per-user flatpak needs no privilege; a system one is owned by
+            // root and `flatpak uninstall --system` fails without escalation.
+            let action = if user_install {
+                Action::Spawn(argv.clone())
+            } else {
+                Escalation::detect().wrap(argv.clone(), "flatpak", &app_id)?
+            };
             Ok(Plan {
                 summary: format!("Flatpak: {}", argv.join(" ")),
-                action: Action::Spawn(argv),
+                action,
             })
         }
         Source::Snap { snap } => {
             require_tool("snap")?;
-            let mut remove = vec!["snap".to_string(), "remove".to_string(), snap];
-            let argv = if providers::command_exists("pkexec") {
-                let mut privileged = vec!["pkexec".to_string()];
-                privileged.append(&mut remove);
-                privileged
-            } else {
-                remove
+            // snapd only accepts removals from root, so a bare `snap remove`
+            // spawned in the background is guaranteed to fail: escalate, or say
+            // so instead of reporting a removal that never starts.
+            let remove = vec!["snap".to_string(), "remove".to_string(), snap.clone()];
+            let action = Escalation::detect().wrap(remove, "snap", &snap)?;
+            let summary = match &action {
+                Action::Terminal(argv) => format!(
+                    "Snap: {} (asks for your password in a terminal)",
+                    argv.join(" ")
+                ),
+                other => format!("Snap: {}", other.argv().join(" ")),
             };
-            Ok(Plan {
-                summary: format!("Snap: {}", argv.join(" ")),
-                action: Action::Spawn(argv),
-            })
+            Ok(Plan { summary, action })
         }
         Source::AppImage {
             binary,
@@ -466,30 +527,26 @@ pub fn plan(entry: &AppEntry) -> Result<Plan, String> {
             }
             let mut remove = vec![tool.to_string()];
             remove.extend(backend.remove_args(&package));
-            if providers::command_exists("pkexec") {
-                let mut argv = vec!["pkexec".to_string()];
-                argv.extend(remove);
-                return Ok(Plan {
-                    summary: format!("{}: {}", backend.label(), argv.join(" ")),
-                    action: Action::Spawn(argv),
-                });
-            }
-            if providers::command_exists("sudo") {
-                let mut argv = vec!["sudo".to_string()];
-                argv.extend(remove);
-                return Ok(Plan {
-                    summary: format!(
-                        "{}: {} (asks for your password in a terminal)",
-                        backend.label(),
-                        argv.join(" ")
-                    ),
-                    action: Action::Terminal(argv),
-                });
-            }
-            Err(format!(
-                "Removing {} needs administrator rights but neither pkexec nor sudo was found",
-                package
-            ))
+            let action = Escalation::detect().wrap(remove, backend.label(), &package)?;
+            let summary = match &action {
+                Action::Terminal(argv) => format!(
+                    "{}: {} (asks for your password in a terminal)",
+                    backend.label(),
+                    argv.join(" ")
+                ),
+                other => format!("{}: {}", backend.label(), other.argv().join(" ")),
+            };
+            Ok(Plan { summary, action })
+        }
+    }
+}
+
+impl Action {
+    /// The command line this action runs, for status text and for tests.
+    fn argv(&self) -> &[String] {
+        match self {
+            Self::Spawn(argv) | Self::Terminal(argv) => argv,
+            Self::DeleteFiles(_) => &[],
         }
     }
 }
@@ -550,6 +607,40 @@ mod tests {
 
     fn home() -> PathBuf {
         PathBuf::from(std::env::var_os("HOME").expect("HOME to be set"))
+    }
+
+    #[test]
+    fn system_scope_uninstall_always_asks_for_privilege() {
+        // Issue #67: a plan that "succeeded" by spawning a command guaranteed to
+        // be refused. Every privileged removal must either be escalated or
+        // refused up front — never a bare detached spawn.
+        let bare = vec!["flatpak".to_string(), "uninstall".to_string()];
+        match Escalation::Pkexec.wrap(bare.clone(), "flatpak", "org.gimp.GIMP") {
+            Ok(Action::Spawn(argv)) => assert_eq!(argv.first().map(String::as_str), Some("pkexec")),
+            other => panic!("pkexec should produce a spawned privileged command, got {other:?}"),
+        }
+        match Escalation::Sudo.wrap(bare.clone(), "flatpak", "org.gimp.GIMP") {
+            Ok(Action::Terminal(argv)) => {
+                assert_eq!(argv.first().map(String::as_str), Some("sudo"))
+            }
+            other => panic!("sudo needs a terminal for the password prompt, got {other:?}"),
+        }
+        let err = Escalation::None
+            .wrap(bare, "flatpak", "org.gimp.GIMP")
+            .expect_err("no way to escalate must be an error, not a doomed spawn");
+        assert!(err.contains("administrator rights"), "{err}");
+        assert!(err.contains("org.gimp.GIMP"), "{err}");
+    }
+
+    #[test]
+    fn user_flatpak_needs_no_escalation() {
+        // The one case that is legitimately a plain spawn.
+        let argv = vec!["flatpak".to_string(), "uninstall".to_string()];
+        assert_eq!(
+            Escalation::wrap_no_privilege(argv.clone()),
+            Action::Spawn(argv),
+            "a per-user flatpak is the caller's own file: no pkexec, no terminal"
+        );
     }
 
     #[test]
