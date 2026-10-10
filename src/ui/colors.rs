@@ -150,7 +150,9 @@ mod tests {
     fn settings_with(theme: &str, wallpaper: &str) -> SettingsData {
         let mut settings = SettingsData::default();
         settings.values.insert("theme".to_owned(), theme.to_owned());
-        settings.values.insert("theme-wallpaper".to_owned(), wallpaper.to_owned());
+        settings
+            .values
+            .insert("theme-wallpaper".to_owned(), wallpaper.to_owned());
         settings
     }
 
