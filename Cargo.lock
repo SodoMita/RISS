@@ -2126,6 +2126,7 @@ dependencies = [
  "open",
  "serde",
  "serde_json",
+ "winit",
 ]
 
 [[package]]
