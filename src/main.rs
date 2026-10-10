@@ -25,7 +25,7 @@ fn main() -> eframe::Result {
     // WindowMode::apply_startup (the transparent theme is the opt-in to
     // compositing the desktop wallpaper through).
     let viewport = egui::ViewportBuilder::default()
-        .with_inner_size([400.0, 600.0])
+        .with_inner_size(ui::window_mode::WindowMode::DEFAULT_INNER_SIZE)
         .with_min_inner_size([300.0, 400.0]);
     let native_options = eframe::NativeOptions {
         viewport: ui::window_mode::WindowMode::apply_startup(&settings, viewport),
