@@ -16,6 +16,10 @@ mod icons;
 pub(crate) mod insets;
 mod osk;
 mod results;
+// Used by the Android resume wiring below; compiled on the host for its
+// unit tests (issue #20).
+#[cfg(any(target_os = "android", test))]
+mod resume_rescan;
 mod search_bar;
 mod settings;
 mod touch;
@@ -97,6 +101,14 @@ pub struct RissApp {
     deferred: Vec<Deferred>,
     first_frame: bool,
     surrender_search_focus: bool,
+    /// Applies the egui style again only when an appearance setting
+    /// actually moved — replaces a per-frame full `Style` clone
+    /// (PR #47's last unclaimed slice).
+    visuals_cache: colors::VisualsCache,
+    /// Coalesced app-list rescan when the launcher returns from the
+    /// background (issue #20); desktop scans at startup only.
+    #[cfg(target_os = "android")]
+    resume_rescan: resume_rescan::ResumeRescan,
 }
 
 impl RissApp {
@@ -152,6 +164,9 @@ impl RissApp {
             deferred: Vec::new(),
             first_frame: true,
             surrender_search_focus: false,
+            visuals_cache: colors::VisualsCache::new(),
+            #[cfg(target_os = "android")]
+            resume_rescan: resume_rescan::ResumeRescan::new(true),
         };
         // egui's native default is 40px per wheel line. The result list adds
         // velocity on top of this; the settings screen just needs to not crawl.
@@ -812,7 +827,13 @@ impl RissApp {
         // above the Android keyboard and pinned to the bottom on every resize.
         // They are painted with `p.panel`, which is transparent whenever the
         // home-screen wallpaper should show through behind the results.
+        // show_separator_line(false): egui panels draw a bg_stroke hairline
+        // at their inner edge by default; two of them framed the favorites
+        // strip and the search bar. KISS draws no divider there ("better
+        // have no horizontal line"), and the inset pads above already set
+        // the same idiom.
         egui::TopBottomPanel::bottom("launcher-search")
+            .show_separator_line(false)
             .exact_height(search_height + status_height + 20.0)
             .frame(
                 egui::Frame::NONE
@@ -830,6 +851,7 @@ impl RissApp {
 
         if favorites_height > 0.0 {
             egui::TopBottomPanel::bottom("launcher-favorites")
+                .show_separator_line(false)
                 .exact_height(favorites_height + 8.0)
                 .frame(
                     egui::Frame::NONE
@@ -856,7 +878,13 @@ impl RissApp {
 impl eframe::App for RissApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let p = Palette::from_settings(&self.settings);
-        self.apply_visuals(ctx, p);
+        // Palette itself is allocation-free (four map lookups and a hex
+        // parse), so it is rebuilt per frame on purpose; the style behind
+        // it is not, so it is applied again only when an appearance key
+        // moved (theme, night-mode, primary-color, theme-wallpaper).
+        if self.visuals_cache.needs_rebuild(&self.settings) {
+            self.apply_visuals(ctx, p);
+        }
         self.icons.begin_frame();
         self.handle_keys(ctx);
         if self.first_frame {
@@ -882,6 +910,21 @@ impl eframe::App for RissApp {
             .is_some_and(|(_, at)| at.elapsed() > UNINSTALL_CONFIRM_WINDOW)
         {
             self.pending_uninstall = None;
+        }
+        // Issue #20: with no Java host a package-change receiver cannot be
+        // registered, so a real resume from the background is the signal
+        // that the installed set may have changed — one coalesced rescan,
+        // never a storm (see resume_rescan.rs for the contract).
+        #[cfg(target_os = "android")]
+        {
+            let (focused, secs) = ctx.input(|i| (i.focused, i.time));
+            if self
+                .resume_rescan
+                .observe(focused, Duration::from_secs_f64(secs.max(0.0)))
+            {
+                self.reload_apps();
+                self.set_status("App list refreshed");
+            }
         }
         self.timer_tick();
         if !self.startup_notes.is_empty() {

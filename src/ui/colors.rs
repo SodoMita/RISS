@@ -137,6 +137,68 @@ impl RissApp {
     }
 }
 
+/// The settings keys `Palette::from_settings` and `apply_visuals` read —
+/// exactly these four, kept beside the functions that read them so a new
+/// appearance key cannot be added without its cache line standing here:
+/// theme, night-mode, primary-color and theme-wallpaper. `apply_visuals`
+/// used to clone the whole egui `Style` (text-style map and all) and push
+/// it back through `set_style`/`set_visuals` on *every* frame; an idle
+/// launcher was rebuilding its theme sixty times a second. Now the style
+/// is rebuilt only when one of these values actually changes — the reason
+/// a cache like this is safe instead of becoming a "settings do nothing"
+/// bug is that the key set is enumerated in one small place, not spread
+/// across the callers. (PR #47's last unclaimed slice.)
+pub(super) struct VisualsCache {
+    primed: bool,
+    theme: String,
+    night_mode: String,
+    primary_color: String,
+    wallpaper: String,
+}
+
+impl VisualsCache {
+    pub(super) fn new() -> Self {
+        Self {
+            primed: false,
+            theme: String::new(),
+            night_mode: String::new(),
+            primary_color: String::new(),
+            wallpaper: String::new(),
+        }
+    }
+
+    /// True when the appearance settings moved since the last apply and
+    /// the egui style must be rebuilt. The steady path compares four
+    /// strings and allocates nothing; the slow path reuses its four
+    /// buffers, so even a theme flipper allocates at most once.
+    pub(super) fn needs_rebuild(&mut self, settings: &SettingsData) -> bool {
+        let stale = !self.primed
+            || self.theme != settings.value("theme")
+            || self.night_mode != settings.value("night-mode")
+            || self.primary_color != settings.value("primary-color")
+            || self.wallpaper != settings.value("theme-wallpaper");
+        if !stale {
+            return false;
+        }
+        self.primed = true;
+        fn copy_into(slot: &mut String, value: &str) {
+            slot.clear();
+            slot.push_str(value);
+        }
+        copy_into(&mut self.theme, settings.value("theme"));
+        copy_into(&mut self.night_mode, settings.value("night-mode"));
+        copy_into(&mut self.primary_color, settings.value("primary-color"));
+        copy_into(&mut self.wallpaper, settings.value("theme-wallpaper"));
+        true
+    }
+}
+
+impl Default for VisualsCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Muted colours used for the generated application badges (from PR #3).
 pub(super) const BADGE_COLORS: [[u8; 3]; 8] = [
     [137, 180, 250],
@@ -224,5 +286,54 @@ mod tests {
         assert!(!wallpaper_visible_on(&settings, false));
         let palette = Palette::for_platform(&settings, false);
         assert_eq!(palette.panel, palette.bg);
+    }
+
+    fn set(settings: &mut SettingsData, key: &str, value: &str) {
+        settings.values.insert(key.to_owned(), value.to_owned());
+    }
+
+    #[test]
+    fn style_rebuilds_once_then_stays_quiet() {
+        let settings = SettingsData::default();
+        let mut cache = VisualsCache::new();
+        let mut rebuilds = 0;
+        for _ in 0..600 {
+            rebuilds += u32::from(cache.needs_rebuild(&settings));
+        }
+        assert!(rebuilds > 0, "the first frame must apply the style");
+        assert_eq!(rebuilds, 1, "idle: 600 frames, exactly 1 rebuild");
+    }
+
+    #[test]
+    fn every_appearance_key_breaks_the_cache_exactly_once() {
+        for key in ["theme", "night-mode", "primary-color", "theme-wallpaper"] {
+            let mut settings = SettingsData::default();
+            let mut cache = VisualsCache::new();
+            assert!(cache.needs_rebuild(&settings));
+            assert!(!cache.needs_rebuild(&settings));
+            set(&mut settings, key, "gleaner-probe");
+            assert!(
+                cache.needs_rebuild(&settings),
+                "{key} is an appearance key and must apply live"
+            );
+            assert!(
+                !cache.needs_rebuild(&settings),
+                "{key}: one change, one rebuild"
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_keys_do_not_rebuild_the_style() {
+        let mut settings = SettingsData::default();
+        let mut cache = VisualsCache::new();
+        assert!(cache.needs_rebuild(&settings));
+        for key in ["results-size", "osk-height-landscape", "search-engine"] {
+            set(&mut settings, key, "other");
+            assert!(
+                !cache.needs_rebuild(&settings),
+                "{key} paints nothing; rebuilding the style for it is the waste this cache buried"
+            );
+        }
     }
 }

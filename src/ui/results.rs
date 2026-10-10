@@ -230,6 +230,13 @@ impl RissApp {
         // KISS binds only the visible children of its ListView. IconCache
         // already stops a flick from decoding every PNG; this stops the flick
         // from *building* every row. That second half is the scroll latency.
+        //
+        // show_rows must be told the pitch a row is ACTUALLY painted at:
+        // it accumulates content height as (pitch * total) while laid-out
+        // rows grow at (painted height + spacing). When the pitch outgrew
+        // the painted rows by 44pt, every screenful banked a phantom void
+        // under the last row — the dead band between the list and the
+        // search bar — and selection/scroll mapping drifted with it.
         let row_height = self.result_row_pitch();
         let total = self.results.len();
         self.reveal_selection(ui, row_height);
@@ -259,11 +266,18 @@ impl RissApp {
         self.drain_deferred();
     }
 
+    /// Uniform result-row pitch — the ONE place that knows how tall a
+    /// result row is. Virtualisation (`show_rows`) and row painting must
+    /// agree on this number: when the pitch outgrew the painted height by
+    /// 12pt (and by the sub-icon/tag extras for rows that have none), the
+    /// list rendered a void between every two rows — the "too much empty
+    /// space between the apps" report. `show_result` takes its height from
+    /// here, so the two can never drift apart again.
     fn result_row_pitch(&self) -> f32 {
         let mut height = match self.settings.value("results-size") {
-            "small" => 56.0,
-            "large" => 88.0,
-            _ => 72.0,
+            "small" => 48.0,
+            "large" => 76.0,
+            _ => 60.0,
         };
         if self.settings.enabled("subicon-visible") {
             height += 16.0;
@@ -372,11 +386,7 @@ impl RissApp {
             5
         };
         let selected = index == self.selected_index;
-        let height = match self.settings.value("results-size") {
-            "small" => 48.0,
-            "large" => 76.0,
-            _ => 60.0,
-        };
+        let height = self.result_row_pitch();
         let shown_name = self.display_name(&result.entry);
         let mut icon_check_rect = ui.available_rect_before_wrap();
         icon_check_rect.max.y = (icon_check_rect.min.y + height).min(icon_check_rect.max.y);
