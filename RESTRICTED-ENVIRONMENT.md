@@ -257,32 +257,48 @@ curious:
 ### 5.3 The working recipe: headless GUI smoke on CI
 
 GitHub's `ubuntu-latest` runners have apt, mesa (llvmpipe software GL) and
-Xvfb. Two headless display options, both scripted in
-`scripts/gui-smoke-test.sh`:
+Xvfb. Two headless display options, both implemented in
+`scripts/gui-smoke-test.sh` and both **verified green** (screenshots of the
+running launcher uploaded as the `smoke-screenshots` workflow artifact):
 
-**X11 (Xvfb)** — install `xvfb imagemagick`, then:
+**X11 (Xvfb)** — `apt install xvfb imagemagick libxkbcommon-x11-0` (winit's
+X11 backend dlopens `libxkbcommon-x11.so` and panics without it), then:
 
 ```sh
 xvfb-run -a -s "-screen 0 1280x720x24" ./target/debug/riss_launcher &
 sleep 8 && import -window root screenshot.png   # ImageMagick grabs the screen
 ```
 
-**Wayland (cage + grim)** — install `cage grim`, then:
+**Wayland (cage + grim)** — `apt install cage grim`, then:
 
 ```sh
 XDG_RUNTIME_DIR=$(mktemp -d) chmod 700 "$XDG_RUNTIME_DIR"
 WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER_ALLOW_SOFTWARE=1 \
-    cage ./target/debug/riss_launcher &
+LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+    cage -- ./target/debug/riss_launcher &
 sleep 8 && grim screenshot.png                  # wlr-screencopy
 ```
 
-Notes:
+Notes (each learned the hard way):
 
 * `WLR_BACKENDS=headless` gives wlroots a virtual output (no GPU needed);
-* `WLR_RENDERER_ALLOW_SOFTWARE=1` lets the GL renderer fall back to Mesa's
-  llvmpipe — the client (RISS) creates EGL contexts the compositor imports;
-* `WLR_LIBINPUT_NO_DEVICES=1` lets the compositor start without any input
-  devices;
+* `WLR_RENDERER_ALLOW_SOFTWARE=1` + `LIBGL_ALWAYS_SOFTWARE=1` +
+  `GALLIUM_DRIVER=llvmpipe` push both compositor and client onto Mesa's
+  llvmpipe — the launcher really takes its native Wayland/EGL path
+  (`WAYLAND_DISPLAY=wayland-0` was confirmed in the session);
+* `WLR_LIBINPUT_NO_DEVICES=1` lets the compositor start without input devices;
+* pass `--` before the application — cage's getopt otherwise eats the app's
+  own dash-args;
+* bound every step with `timeout`: a headless `grim` can wait for a frame
+  forever, and cage may not exit with the last client (the script treats
+  `timeout` exit 124 as harmless **iff** the screenshot exists);
+* the script reports `mean`/`stddev` of each screenshot as workflow
+  annotations, so remote callers can confirm real pixels were rendered
+  (e.g. `1280x720 mean=0.010 stddev=0.018` = the dark-theme UI);
+* if the native path ever regresses, the script falls back to running the
+  launcher as an X11 client on cage's Xwayland (`env -u WAYLAND_DISPLAY`,
+  pixman compositor, glamor software fallback) and annotates which path
+  produced the screenshot;
 * the same commands work on any Linux box with `apt install cage grim xvfb`.
 
 The `gui-smoke` job in `.github/workflows/test.yml` runs both modes, saves the
