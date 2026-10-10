@@ -1127,6 +1127,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2117,6 +2119,7 @@ dependencies = [
  "egui",
  "freedesktop-desktop-entry",
  "fuzzy-matcher",
+ "image",
  "jni 0.21.1",
  "log",
  "once_cell",
