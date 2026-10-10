@@ -15,3 +15,4 @@ jobs:
         with:
           shared-key: "test-build"
       - run: python3 ci/emit_annotations.py cargo check --all-targets --message-format=json
+      - run: python3 ci/emit_annotations.py cargo clippy --all-targets --message-format=json -- -D warnings
