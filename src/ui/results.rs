@@ -431,7 +431,6 @@ impl RissApp {
         let mut reset_rank = false;
         let mut toggle_history_exclusion = false;
         let mut toggle_exclusion = false;
-        let mut uninstall = false;
         let mut copy_name = false;
         let mut copy_exec = false;
         let mut open_desktop = false;
@@ -535,6 +534,19 @@ impl RissApp {
                     reset_rank = true;
                     ui.close();
                 }
+                let uninstall_enabled = result.entry.can_uninstall();
+                let uninstall_label = if uninstall_pending {
+                    "Confirm uninstall"
+                } else {
+                    "Uninstall"
+                };
+                if ui
+                    .add_enabled(uninstall_enabled, egui::Button::new(uninstall_label))
+                    .clicked()
+                {
+                    uninstall = true;
+                    ui.close();
+                }
                 ui.separator();
                 if ui.button("Copy name").clicked() {
                     copy_name = true;
@@ -625,6 +637,27 @@ impl RissApp {
         }
         if manage_favorites {
             self.apply_favorite_action(FavoriteAction::Manage);
+        }
+        if uninstall {
+            let entry = result.entry.clone();
+            if uninstall_pending {
+                self.pending_uninstall = None;
+                match entry.uninstall() {
+                    Ok(()) => {
+                        self.reload_apps();
+                        self.set_status(format!("Uninstalling {}", shown_name));
+                    }
+                    Err(error) => self.set_status(error),
+                }
+            } else {
+                match entry.uninstall_preview() {
+                    Ok(summary) => {
+                        self.pending_uninstall = Some((entry.exec.clone(), Instant::now()));
+                        self.set_status(format!("{summary} — press Uninstall again to confirm"));
+                    }
+                    Err(error) => self.set_status(error),
+                }
+            }
         }
         if reset_rank {
             let exec = result.entry.exec.clone();

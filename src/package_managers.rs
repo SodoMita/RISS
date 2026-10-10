@@ -540,6 +540,7 @@ mod tests {
             launch_count: 0,
             last_launched: 0,
             is_favorite: false,
+            is_system: false,
         }
     }
 
