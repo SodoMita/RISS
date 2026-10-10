@@ -166,12 +166,13 @@ impl SearchEngine {
             .collect();
 
         // Sort by score descending, then by name so the order is stable.
-        results.sort_by(|a, b| {
-            b.score.cmp(&a.score).then_with(|| {
-                display_name(&a.entry, aliases)
-                    .to_lowercase()
-                    .cmp(&display_name(&b.entry, aliases).to_lowercase())
-            })
+        // Cached keys so we do not allocate two lowercase Strings on every
+        // comparison (n log n) — once per row instead.
+        results.sort_by_cached_key(|r| {
+            (
+                std::cmp::Reverse(r.score),
+                display_name(&r.entry, aliases).to_lowercase(),
+            )
         });
         results.truncate(max_results);
         results
