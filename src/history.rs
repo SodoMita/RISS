@@ -17,6 +17,8 @@ pub struct HistoryData {
     pub tags: HashMap<String, Vec<String>>,
     /// Custom display names (KISS' "rename app"): exec -> alias
     pub aliases: HashMap<String, String>,
+    /// Custom icon name or path: exec -> custom icon
+    pub custom_icons: HashMap<String, String>,
     /// Number shortcuts: "1".."9" -> exec
     pub shortcuts: HashMap<String, String>,
     /// Previously typed web searches
@@ -150,6 +152,21 @@ impl HistoryData {
         } else {
             self.aliases
                 .insert(exec.to_string(), alias.trim().to_string());
+        }
+    }
+
+    // --- custom icons ----------------------------------------------------
+
+    pub fn custom_icon(&self, exec: &str) -> Option<&String> {
+        self.custom_icons.get(exec)
+    }
+
+    pub fn set_custom_icon(&mut self, exec: &str, icon: String) {
+        if icon.trim().is_empty() {
+            self.custom_icons.remove(exec);
+        } else {
+            self.custom_icons
+                .insert(exec.to_string(), icon.trim().to_string());
         }
     }
 
@@ -375,11 +392,33 @@ mod tests {
         history.record_launch_at("app", NOW);
         history.toggle_favorite("app");
         history.set_tags("app", vec!["a".to_string()]);
+        history.set_alias("app", "My App".to_string());
+        history.set_custom_icon("app", "app-icon".to_string());
         let json = serde_json::to_string(&history).unwrap();
         let parsed: HistoryData = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.get_launch_count("app"), 1);
         assert!(parsed.is_favorite("app"));
         assert_eq!(parsed.get_tags("app"), vec!["a".to_string()]);
+        assert_eq!(parsed.alias("app"), Some(&"My App".to_string()));
+        assert_eq!(parsed.custom_icon("app"), Some(&"app-icon".to_string()));
+    }
+
+    #[test]
+    fn aliases_and_custom_icons_operations() {
+        let mut history = HistoryData::default();
+        history.set_alias("firefox", "Browser".to_string());
+        history.set_custom_icon("firefox", "web-browser".to_string());
+        assert_eq!(history.alias("firefox"), Some(&"Browser".to_string()));
+        assert_eq!(
+            history.custom_icon("firefox"),
+            Some(&"web-browser".to_string())
+        );
+
+        // Setting empty string clears alias and custom icon
+        history.set_alias("firefox", "".to_string());
+        history.set_custom_icon("firefox", "   ".to_string());
+        assert_eq!(history.alias("firefox"), None);
+        assert_eq!(history.custom_icon("firefox"), None);
     }
 
     #[test]
@@ -391,6 +430,7 @@ mod tests {
         assert!(parsed.favorites.is_empty());
         assert!(parsed.tags.is_empty());
         assert!(parsed.aliases.is_empty());
+        assert!(parsed.custom_icons.is_empty());
         assert!(parsed.shortcuts.is_empty());
         assert!(parsed.search_history.is_empty());
         assert!(parsed.exec_history.is_empty());
@@ -404,6 +444,18 @@ mod tests {
         // An empty alias restores the original name.
         history.set_alias("firefox", String::new());
         assert!(history.alias("firefox").is_none());
+    }
+
+    #[test]
+    fn custom_icon_can_be_set_and_cleared() {
+        let mut history = HistoryData::default();
+        history.set_custom_icon("firefox", "  browser-icon  ".to_string());
+        assert_eq!(
+            history.custom_icon("firefox"),
+            Some(&"browser-icon".to_string())
+        );
+        history.set_custom_icon("firefox", String::new());
+        assert!(history.custom_icon("firefox").is_none());
     }
 
     #[test]
@@ -438,12 +490,14 @@ mod tests {
     fn new_fields_survive_serde_roundtrip() {
         let mut history = HistoryData::default();
         history.set_alias("app", "Alias".to_string());
+        history.set_custom_icon("app", "custom-icon".to_string());
         history.set_shortcut(3, "app");
         history.record_search("query");
         history.record_exec("do-thing");
         let json = serde_json::to_string(&history).unwrap();
         let parsed: HistoryData = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.alias("app"), Some(&"Alias".to_string()));
+        assert_eq!(parsed.custom_icon("app"), Some(&"custom-icon".to_string()));
         assert_eq!(parsed.shortcut_for(3), Some(&"app".to_string()));
         assert_eq!(parsed.recent_searches(5), vec!["query"]);
         assert_eq!(parsed.recent_execs(5), vec!["do-thing"]);

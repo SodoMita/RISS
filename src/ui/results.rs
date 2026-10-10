@@ -61,6 +61,9 @@ impl RissApp {
             44.0
         };
         let mut launch_exec = None;
+        let mut toggle_fav_exec = None;
+        let mut app_info_entry: Option<AppEntry> = None;
+        let mut store_entry: Option<AppEntry> = None;
         egui::ScrollArea::horizontal().show(ui, |ui| {
             ui.horizontal(|ui| {
                 for app in favorites {
@@ -95,11 +98,53 @@ impl RissApp {
                     if response.clicked() {
                         launch_exec = Some(app.exec.clone());
                     }
+                    if response.long_touched() {
+                        egui::Popup::open_id(
+                            &response.ctx,
+                            egui::Popup::default_response_id(&response),
+                        );
+                    }
+                    response.context_menu(|ui| {
+                        ui.set_min_width(200.0);
+                        ui.label(RichText::new(&app.name).strong());
+                        ui.separator();
+                        if ui.button("Open").clicked() {
+                            launch_exec = Some(app.exec.clone());
+                            ui.close();
+                        }
+                        if ui.button("Remove from favorites").clicked() {
+                            toggle_fav_exec = Some(app.exec.clone());
+                            ui.close();
+                        }
+                        if ui.button("App info").clicked() {
+                            app_info_entry = Some(app.clone());
+                            ui.close();
+                        }
+                        if ui.button("View in store").clicked() {
+                            store_entry = Some(app.clone());
+                            ui.close();
+                        }
+                    });
                 }
             });
         });
         if let Some(exec) = launch_exec {
             self.launch_exec(&exec);
+        }
+        if let Some(exec) = toggle_fav_exec {
+            self.toggle_favorite_exec(&exec);
+        }
+        if let Some(entry) = app_info_entry {
+            match entry.open_app_info() {
+                Ok(()) => self.set_status(format!("Opened app info for {}", entry.name)),
+                Err(e) => self.set_status(e),
+            }
+        }
+        if let Some(entry) = store_entry {
+            match entry.view_in_store() {
+                Ok(()) => self.set_status(format!("Opened store for {}", entry.name)),
+                Err(e) => self.set_status(e),
+            }
         }
     }
 
@@ -337,10 +382,14 @@ impl RissApp {
         }
         let mut edit = false;
         let mut rename = false;
+        let mut add_custom_icon = false;
+        let mut app_info = false;
+        let mut view_in_store = false;
         let mut launch = false;
         let mut reset_rank = false;
         let mut toggle_history_exclusion = false;
         let mut toggle_exclusion = false;
+        let mut uninstall = false;
         let mut copy_name = false;
         let mut copy_exec = false;
         let mut open_desktop = false;
@@ -382,16 +431,35 @@ impl RissApp {
                     toggle = true;
                     ui.close();
                 }
+                if ui.button("Rename").clicked() {
+                    rename = true;
+                    ui.close();
+                }
                 if ui.button("Edit tags").clicked() {
                     edit = true;
                     ui.close();
                 }
-                if ui.button("Rename…").clicked() {
-                    rename = true;
+                if ui.button("Add custom icon").clicked() {
+                    add_custom_icon = true;
                     ui.close();
                 }
-                if ui.button("Reset usage rank").clicked() {
-                    reset_rank = true;
+                if ui.button("App info").clicked() {
+                    app_info = true;
+                    ui.close();
+                }
+                if ui.button("View in store").clicked() {
+                    view_in_store = true;
+                    ui.close();
+                }
+                if ui
+                    .button(if excluded_from_search {
+                        "Restore to results"
+                    } else {
+                        "Exclude app"
+                    })
+                    .clicked()
+                {
+                    toggle_exclusion = true;
                     ui.close();
                 }
                 if ui
@@ -405,17 +473,6 @@ impl RissApp {
                     toggle_history_exclusion = true;
                     ui.close();
                 }
-                if ui
-                    .button(if excluded_from_search {
-                        "Restore to results"
-                    } else {
-                        "Hide from results"
-                    })
-                    .clicked()
-                {
-                    toggle_exclusion = true;
-                    ui.close();
-                }
                 ui.menu_button("Pin to number", |ui| {
                     for (key, label) in &pin_labels {
                         if ui.button(label.clone()).clicked() {
@@ -424,6 +481,18 @@ impl RissApp {
                         }
                     }
                 });
+                if ui.button("Reset usage rank").clicked() {
+                    reset_rank = true;
+                    ui.close();
+                }
+                let uninstall_enabled = !result.entry.is_system;
+                if ui
+                    .add_enabled(uninstall_enabled, egui::Button::new("Uninstall"))
+                    .clicked()
+                {
+                    uninstall = true;
+                    ui.close();
+                }
                 ui.separator();
                 if ui.button("Copy name").clicked() {
                     copy_name = true;
@@ -439,6 +508,11 @@ impl RissApp {
                     open_desktop = true;
                     ui.close();
                 }
+                ui.label(
+                    RichText::new("Long-press any app for actions")
+                        .small()
+                        .color(p.dim),
+                );
             });
         }
         if launch {
@@ -447,22 +521,45 @@ impl RissApp {
         if toggle {
             self.toggle_favorite_exec(&result.entry.exec);
         }
-        if reset_rank {
-            let exec = result.entry.exec.clone();
-            self.history.reset_rank(&exec);
-            self.save_history();
-            self.reload_apps();
-            self.set_status("Usage rank reset");
+        if rename {
+            self.editing_alias = Some(result.entry.exec.clone());
+            self.alias_input = shown_name.clone();
+            self.editing_tags = None;
+            self.editing_icon = None;
         }
-        if toggle_history_exclusion {
+        if edit {
+            self.editing_tags = Some(result.entry.exec.clone());
+            self.tag_input = result.entry.tags.join(", ");
+            self.editing_alias = None;
+            self.editing_icon = None;
+        }
+        if add_custom_icon {
+            self.editing_icon = Some(result.entry.exec.clone());
+            self.icon_input = self
+                .history
+                .custom_icon(&result.entry.exec)
+                .cloned()
+                .unwrap_or_else(|| result.entry.icon.clone());
+            self.editing_tags = None;
+            self.editing_alias = None;
+        }
+        if app_info {
             let entry = result.entry.clone();
-            self.set_excluded_from_history(&entry, !excluded_from_history);
-            self.set_status(if excluded_from_history {
-                format!("{} returns to history", shown_name)
-            } else {
-                format!("{} hidden from history", shown_name)
-            });
-            self.update_results();
+            match entry.open_app_info() {
+                Ok(()) => {
+                    self.set_status(format!("Opened app info for {}", shown_name));
+                }
+                Err(error) => self.set_status(error),
+            }
+        }
+        if view_in_store {
+            let entry = result.entry.clone();
+            match entry.view_in_store() {
+                Ok(()) => {
+                    self.set_status(format!("Opened store for {}", shown_name));
+                }
+                Err(error) => self.set_status(error),
+            }
         }
         if toggle_exclusion {
             let entry = result.entry.clone();
@@ -474,17 +571,32 @@ impl RissApp {
             });
             self.reload_apps();
         }
-        if edit {
-            self.editing_tags = Some(result.entry.exec.clone());
-            self.tag_input = result.entry.tags.join(", ");
+        if toggle_history_exclusion {
+            let entry = result.entry.clone();
+            self.set_excluded_from_history(&entry, !excluded_from_history);
+            self.set_status(if excluded_from_history {
+                format!("{} returns to history", shown_name)
+            } else {
+                format!("{} hidden from history", shown_name)
+            });
+            self.update_results();
         }
-        if rename {
-            self.editing_alias = Some(result.entry.exec.clone());
-            self.alias_input = self
-                .history
-                .alias(&result.entry.exec)
-                .cloned()
-                .unwrap_or_default();
+        if reset_rank {
+            let exec = result.entry.exec.clone();
+            self.history.reset_rank(&exec);
+            self.save_history();
+            self.reload_apps();
+            self.set_status("Usage rank reset");
+        }
+        if uninstall {
+            let entry = result.entry.clone();
+            match entry.uninstall() {
+                Ok(()) => {
+                    self.reload_apps();
+                    self.set_status(format!("Uninstalling {}", shown_name));
+                }
+                Err(error) => self.set_status(error),
+            }
         }
         if copy_name {
             if crate::providers::copy_to_clipboard(&shown_name) {
@@ -519,6 +631,9 @@ impl RissApp {
         if self.editing_alias.as_deref() == Some(result.entry.exec.as_str()) {
             self.show_alias_editor(ui, &result.entry.exec, p);
         }
+        if self.editing_icon.as_deref() == Some(result.entry.exec.as_str()) {
+            self.show_icon_editor(ui, &result.entry.exec, p);
+        }
         ui.add_space(2.0);
     }
 
@@ -532,7 +647,7 @@ impl RissApp {
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut self.tag_input)
                             .hint_text("comma-separated tags")
-                            .desired_width(ui.available_width() - 70.0),
+                            .desired_width((ui.available_width() - 110.0).max(100.0)),
                     );
                     if ui.button("Save").clicked()
                         || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
@@ -549,6 +664,9 @@ impl RissApp {
                         self.editing_tags = None;
                         self.reload_apps();
                     }
+                    if ui.button("Cancel").clicked() {
+                        self.editing_tags = None;
+                    }
                 })
             });
     }
@@ -562,17 +680,68 @@ impl RissApp {
                 ui.horizontal(|ui| {
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut self.alias_input)
-                            .hint_text("new name — empty restores the original")
-                            .desired_width(ui.available_width() - 70.0),
+                            .hint_text("app name")
+                            .desired_width((ui.available_width() - 160.0).max(100.0)),
                     );
                     if ui.button("Save").clicked()
                         || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                     {
-                        let alias = self.alias_input.clone();
+                        let alias = self.alias_input.trim().to_owned();
                         self.history.set_alias(exec, alias);
                         self.save_history();
                         self.editing_alias = None;
                         self.reload_apps();
+                        self.set_status("App renamed");
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.history.set_alias(exec, String::new());
+                        self.save_history();
+                        self.editing_alias = None;
+                        self.reload_apps();
+                        self.set_status("Name reset to default");
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.editing_alias = None;
+                    }
+                })
+            });
+    }
+
+    fn show_icon_editor(&mut self, ui: &mut egui::Ui, exec: &str, p: Palette) {
+        egui::Frame::NONE
+            .fill(p.surface)
+            .corner_radius(CornerRadius::same(8))
+            .inner_margin(egui::Margin::same(8))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut self.icon_input)
+                            .hint_text("icon name, package or file path")
+                            .desired_width((ui.available_width() - 160.0).max(100.0)),
+                    );
+                    if ui.button("Save").clicked()
+                        || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    {
+                        let icon = self.icon_input.trim().to_owned();
+                        self.history.set_custom_icon(exec, icon);
+                        self.save_history();
+                        self.icon_textures.clear();
+                        self.icons_without_image.clear();
+                        self.editing_icon = None;
+                        self.reload_apps();
+                        self.set_status("Custom icon set");
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.history.set_custom_icon(exec, String::new());
+                        self.save_history();
+                        self.icon_textures.clear();
+                        self.icons_without_image.clear();
+                        self.editing_icon = None;
+                        self.reload_apps();
+                        self.set_status("Icon reset to default");
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.editing_icon = None;
                     }
                 })
             });
