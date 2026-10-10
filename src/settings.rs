@@ -226,10 +226,19 @@ macro_rules! s {
     };
 }
 
+/// Built once and shared: the settings screen walks the whole list on every
+/// repaint, and every entry is `'static` data, so there is nothing to gain from
+/// rebuilding the vector each frame.
+static SPECS: std::sync::LazyLock<Vec<SettingSpec>> = std::sync::LazyLock::new(build_specs);
+
 /// Every preference exposed by KISS is represented here, plus RISS-specific
 /// reset/refresh actions. Platform-only options remain configurable and are
 /// applied whenever the platform supports them.
-pub fn specs() -> Vec<SettingSpec> {
+pub fn specs() -> &'static [SettingSpec] {
+    &SPECS
+}
+
+fn build_specs() -> Vec<SettingSpec> {
     use SettingKind::*;
     vec![
         s!("History", "reset-history", "Clear history", Action),

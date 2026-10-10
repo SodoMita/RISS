@@ -4,6 +4,15 @@ use crate::android_app_entry::AppEntry;
 use crate::app_entry::AppEntry;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use std::cmp::Ordering;
+
+/// Case-insensitive name order without allocating a lowered copy of either
+/// name for every comparison. Equivalent to comparing `to_lowercase()` of both.
+pub fn compare_names(a: &str, b: &str) -> Ordering {
+    a.chars()
+        .flat_map(|c| c.to_lowercase())
+        .cmp(b.chars().flat_map(|c| c.to_lowercase()))
+}
 
 /// Result of a search with relevance score
 #[derive(Debug, Clone)]
@@ -34,115 +43,102 @@ impl SearchEngine {
         }
     }
 
-    /// Search through apps with the given query
+    /// Search through apps with the given query.
+    ///
+    /// Candidates are ranked by index, so the entries that fall outside
+    /// `max_results` are never cloned. Matching on the name, its prefix, the
+    /// tags and the categories happens before the fuzzy matcher, because
+    /// building the concatenated search text allocates once per app.
     pub fn search(&self, query: &str, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
         let query = query.trim();
-
         if query.is_empty() {
             return Vec::new();
         }
 
-        // Check if it's a calculation
-        if let Some(_result) = try_calculate(query) {
-            // We'll handle this specially in the UI
-            // For now, return empty and handle in UI
+        let query_lower = query.to_lowercase();
+        let mut hits: Vec<(i64, MatchType, usize)> = Vec::new();
+        for (index, app) in apps.iter().enumerate() {
+            if let Some((score, match_type)) = self.classify(app, query, &query_lower) {
+                hits.push((score, match_type, index));
+            }
         }
 
-        let query_lower = query.to_lowercase();
-        let mut results: Vec<SearchResult> = apps
-            .iter()
-            .filter_map(|app| {
-                let name_lower = app.name.to_lowercase();
-                let searchable = app.searchable_text();
-
-                // Exact match on name
-                if name_lower == query_lower {
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: 10000,
-                        match_type: MatchType::Exact,
-                    });
-                }
-
-                // Prefix match on name
-                if name_lower.starts_with(&query_lower) {
-                    let score = 5000 + (100 - app.name.len() as i64);
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score,
-                        match_type: MatchType::Prefix,
-                    });
-                }
-
-                // Tag match
-                for tag in &app.tags {
-                    if tag.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 3000,
-                            match_type: MatchType::Tag,
-                        });
-                    }
-                }
-
-                // Category match
-                for cat in &app.categories {
-                    if cat.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 2000,
-                            match_type: MatchType::Category,
-                        });
-                    }
-                }
-
-                // Fuzzy match on searchable text
-                if let Some(score) = self.matcher.fuzzy_match(&searchable, query) {
-                    // Boost by launch count
-                    let boosted = score + (app.launch_count as i64 * 10);
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: boosted,
-                        match_type: MatchType::Fuzzy,
-                    });
-                }
-
-                None
+        hits.sort_by_key(|(score, _, _)| std::cmp::Reverse(*score));
+        hits.truncate(max_results);
+        hits.into_iter()
+            .map(|(score, match_type, index)| SearchResult {
+                entry: apps[index].clone(),
+                score,
+                match_type,
             })
-            .collect();
-
-        // Sort by score descending
-        results.sort_by_key(|a| std::cmp::Reverse(a.score));
-        results.truncate(max_results);
-        results
+            .collect()
     }
 
-    /// Get default apps to show when no search query (favorites + most used)
+    /// Score one app against the query: `None` when it does not match.
+    fn classify(&self, app: &AppEntry, query: &str, query_lower: &str) -> Option<(i64, MatchType)> {
+        let name_lower = app.name.to_lowercase();
+
+        // Exact match on name
+        if name_lower == query_lower {
+            return Some((10000, MatchType::Exact));
+        }
+
+        // Prefix match on name
+        if name_lower.starts_with(query_lower) {
+            let score = 5000 + (100 - app.name.len() as i64);
+            return Some((score, MatchType::Prefix));
+        }
+
+        // Tag match
+        for tag in &app.tags {
+            if tag.to_lowercase().starts_with(query_lower) {
+                return Some((3000, MatchType::Tag));
+            }
+        }
+
+        // Category match
+        for cat in &app.categories {
+            if cat.to_lowercase().starts_with(query_lower) {
+                return Some((2000, MatchType::Category));
+            }
+        }
+
+        // Fuzzy match on searchable text, with a boost for how often the app
+        // is used.
+        self.matcher
+            .fuzzy_match(&app.searchable_text(), query)
+            .map(|score| (score + i64::from(app.launch_count) * 10, MatchType::Fuzzy))
+    }
+
+    /// Get default apps to show when no search query (favorites + most used).
     pub fn get_default_apps(&self, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
-        let mut results: Vec<SearchResult> = apps
+        let mut hits: Vec<(i64, usize)> = apps
             .iter()
-            .filter(|app| app.is_favorite || app.launch_count > 0)
-            .map(|app| {
+            .enumerate()
+            .filter(|(_, app)| app.is_favorite || app.launch_count > 0)
+            .map(|(index, app)| {
                 let score = if app.is_favorite {
-                    10000 + app.launch_count as i64
+                    10000 + i64::from(app.launch_count)
                 } else {
-                    app.launch_count as i64
+                    i64::from(app.launch_count)
                 };
-                SearchResult {
-                    entry: app.clone(),
-                    score,
-                    match_type: if app.is_favorite {
-                        MatchType::Exact
-                    } else {
-                        MatchType::Fuzzy
-                    },
-                }
+                (score, index)
             })
             .collect();
 
-        results.sort_by_key(|a| std::cmp::Reverse(a.score));
-        results.truncate(max_results);
-        results
+        hits.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+        hits.truncate(max_results);
+        hits.into_iter()
+            .map(|(score, index)| SearchResult {
+                entry: apps[index].clone(),
+                score,
+                match_type: if apps[index].is_favorite {
+                    MatchType::Exact
+                } else {
+                    MatchType::Fuzzy
+                },
+            })
+            .collect()
     }
 }
 
@@ -288,5 +284,71 @@ mod tests {
         assert_eq!(try_calculate("2^10"), Some("= 1024".to_string()));
         assert_eq!(try_calculate("(5+3)*2"), Some("= 16".to_string()));
         assert_eq!(try_calculate("hello"), None);
+    }
+
+    #[test]
+    fn compare_names_matches_lowercase_ordering() {
+        assert_eq!(compare_names("Firefox", "firefox"), Ordering::Equal);
+        assert_eq!(compare_names("Alpha", "beta"), Ordering::Less);
+        // 'ä' sorts after 'z' once lowered, exactly like `to_lowercase()`.
+        assert_eq!(compare_names("äpp", "Zeta"), Ordering::Greater);
+    }
+
+    fn app(name: &str, comment: &str, tags: &[&str]) -> AppEntry {
+        AppEntry {
+            name: name.to_owned(),
+            comment: comment.to_owned(),
+            exec: name.to_lowercase(),
+            icon: String::new(),
+            categories: Vec::new(),
+            tags: tags.iter().map(|tag| tag.to_lowercase()).collect(),
+            desktop_file: std::path::PathBuf::new(),
+            launch_count: 0,
+            last_launched: 0,
+            is_favorite: false,
+        }
+    }
+
+    fn names(hits: &[SearchResult]) -> Vec<&str> {
+        hits.iter().map(|hit| hit.entry.name.as_str()).collect()
+    }
+
+    #[test]
+    fn search_ranks_name_matches_first_and_limits_results() {
+        let engine = SearchEngine::new();
+        let apps = vec![
+            app("Firestarter", "Fire tools", &[]),
+            app("firefox", "Browser", &["web"]),
+            app("Terminal", "Shell", &["console"]),
+        ];
+        // Both "firefox" and "Firestarter" prefix-match; the shorter name wins,
+        // and `max_results` must not leak the third hit.
+        let hits = engine.search("fire", &apps, 1);
+        assert_eq!(names(&hits), vec!["firefox"]);
+        assert_eq!(hits[0].match_type, MatchType::Prefix);
+    }
+
+    #[test]
+    fn search_matches_tags() {
+        let engine = SearchEngine::new();
+        let apps = vec![
+            app("Firestarter", "Fire tools", &[]),
+            app("firefox", "Browser", &["web"]),
+        ];
+        let hits = engine.search("web", &apps, 10);
+        assert_eq!(names(&hits), vec!["firefox"]);
+        assert_eq!(hits[0].match_type, MatchType::Tag);
+    }
+
+    #[test]
+    fn default_list_orders_favorites_ahead_of_usage() {
+        let engine = SearchEngine::new();
+        let mut used = app("Vim", "Editor", &[]);
+        used.launch_count = 5;
+        let mut favorite = app("Gimp", "Images", &[]);
+        favorite.is_favorite = true;
+        let never_used = app("Files", "Manager", &[]);
+        let hits = engine.get_default_apps(&[used, favorite, never_used], usize::MAX);
+        assert_eq!(names(&hits), vec!["Gimp", "Vim"]);
     }
 }
