@@ -14,6 +14,9 @@ mod providers;
 mod search;
 mod settings;
 mod storage;
+#[cfg(test)]
+mod tests;
+
 mod ui;
 
 #[cfg(target_os = "android")]

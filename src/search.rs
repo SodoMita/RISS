@@ -63,6 +63,90 @@ pub struct SearchEngine {
     matcher: SkimMatcherV2,
 }
 
+/// Case-insensitive `starts_with` that allocates only when the text is not
+/// ASCII. `str::to_lowercase` is not the same function as ASCII folding for
+/// non-ASCII input ("\u{130}" lowercases to two chars), so the Unicode path is kept
+/// for exactly the inputs where it matters and buffered for the ones where it
+/// does not.
+fn starts_with_ignore_case(hay: &str, needle: &str, buf: &mut String) -> bool {
+    if hay.is_ascii() && needle.is_ascii() {
+        hay.get(..needle.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(needle))
+    } else {
+        lower_into(hay, buf);
+        buf.starts_with(needle)
+    }
+}
+
+fn eq_ignore_case(hay: &str, needle: &str, buf: &mut String) -> bool {
+    if hay.is_ascii() && needle.is_ascii() {
+        hay.len() == needle.len() && hay.as_bytes().eq_ignore_ascii_case(needle.as_bytes())
+    } else {
+        lower_into(hay, buf);
+        *buf == *needle
+    }
+}
+
+/// `s.to_lowercase()` without the allocation, reusing `buf`'s capacity.
+fn lower_into(s: &str, buf: &mut String) {
+    buf.clear();
+    buf.reserve(s.len());
+    buf.extend(s.chars().flat_map(char::to_lowercase));
+}
+
+/// `display_name` without the `String` it builds: every candidate in a search
+/// used to pay a clone of its name (or alias) per keystroke.
+fn display_name_ref<'a>(app: &'a AppEntry, aliases: &'a HashMap<String, String>) -> &'a str {
+    match aliases.get(&app.exec) {
+        Some(alias) => alias.as_str(),
+        None => app.name.as_str(),
+    }
+}
+
+/// `searchable_text(app, aliases)` written into a caller-owned buffer.
+fn write_searchable_text(app: &AppEntry, aliases: &HashMap<String, String>, out: &mut String) {
+    // The buffer is reused across candidates, so it has to be emptied first:
+    // appending instead would let candidate N+1 fuzzy-match against the text of
+    // candidates 0..=N.
+    out.clear();
+    if let Some(alias) = aliases.get(&app.exec) {
+        out.push_str(alias);
+        out.push(' ');
+    }
+    out.push_str(&app.name);
+    if !app.comment.is_empty() {
+        out.push(' ');
+        out.push_str(&app.comment);
+    }
+    for tag in &app.tags {
+        out.push(' ');
+        out.push_str(tag);
+    }
+    for cat in &app.categories {
+        out.push(' ');
+        out.push_str(cat);
+    }
+}
+
+/// Display-name tie-break for equal scores, allocation-free on ASCII.
+fn cmp_display_name(
+    a: &AppEntry,
+    b: &AppEntry,
+    aliases: &HashMap<String, String>,
+    scratch: &mut String,
+) -> std::cmp::Ordering {
+    let x = display_name_ref(a, aliases);
+    let y = display_name_ref(b, aliases);
+    if x.is_ascii() && y.is_ascii() {
+        x.bytes()
+            .map(|c| c.to_ascii_lowercase())
+            .cmp(y.bytes().map(|c| c.to_ascii_lowercase()))
+    } else {
+        let _ = scratch;
+        x.to_lowercase().cmp(&y.to_lowercase())
+    }
+}
+
 impl SearchEngine {
     pub fn new() -> Self {
         Self {
@@ -85,125 +169,132 @@ impl SearchEngine {
         }
 
         let query_lower = query.to_lowercase();
-        let mut results: Vec<SearchResult> = apps
-            .iter()
-            .filter_map(|app| {
-                let name_lower = display_name(app, aliases).to_lowercase();
-                let searchable = searchable_text(app, aliases);
 
-                // Exact match on name
-                if name_lower == query_lower {
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: 10000 + usage_boost(app),
-                        match_type: MatchType::Exact,
-                        action: ResultAction::Launch,
-                    });
+        // Candidates are ranked as (score, kind, index) over the borrowed pool
+        // and cloned only after truncation: a two-character query matched most
+        // of the app list, so the old code deep-cloned every AppEntry -- six
+        // heap allocations each -- to throw all but `max_results` away, and the
+        // comparator then built two more lowercased strings per comparison
+        // (issue #37, "allocations in hot loops").
+        let mut scored: Vec<(i64, MatchType, usize)> = Vec::new();
+        let mut name_buf = String::new();
+        let mut text_buf = String::new();
+
+        for (idx, app) in apps.iter().enumerate() {
+            let name = display_name_ref(app, aliases);
+            let boost = usage_boost(app);
+            let mut hit: Option<(i64, MatchType)> = None;
+
+            // Exact match on name.
+            if eq_ignore_case(name, &query_lower, &mut name_buf) {
+                hit = Some((10000 + boost, MatchType::Exact));
+            }
+            // Prefix match on name.
+            if hit.is_none() && starts_with_ignore_case(name, &query_lower, &mut name_buf) {
+                let len = if name.is_ascii() {
+                    name.len()
+                } else {
+                    lower_into(name, &mut name_buf);
+                    name_buf.len()
+                };
+                hit = Some((5000 + (100 - len as i64) + boost, MatchType::Prefix));
+            }
+            // Word match inside the name ("fire" matching "Firefox Nightly").
+            if hit.is_none() {
+                let words = if name.is_ascii() {
+                    name.split_whitespace()
+                        .any(|w| starts_with_ignore_case(w, &query_lower, &mut name_buf))
+                } else {
+                    lower_into(name, &mut name_buf);
+                    name_buf
+                        .split_whitespace()
+                        .any(|w| w.starts_with(&query_lower))
+                };
+                if words {
+                    hit = Some((4000 + boost, MatchType::Prefix));
                 }
-
-                // Prefix match on name
-                if name_lower.starts_with(&query_lower) {
-                    let score = 5000 + (100 - name_lower.len() as i64) + usage_boost(app);
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score,
-                        match_type: MatchType::Prefix,
-                        action: ResultAction::Launch,
-                    });
-                }
-
-                // Word match inside the name ("fire" matching "Firefox Nightly")
-                if name_lower
-                    .split_whitespace()
-                    .any(|w| w.starts_with(&query_lower))
-                {
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: 4000 + usage_boost(app),
-                        match_type: MatchType::Prefix,
-                        action: ResultAction::Launch,
-                    });
-                }
-
-                // Tag match
+            }
+            // Tag match.
+            if hit.is_none() {
                 for tag in &app.tags {
-                    if tag.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 3000 + usage_boost(app),
-                            match_type: MatchType::Tag,
-                            action: ResultAction::Launch,
-                        });
+                    if starts_with_ignore_case(tag, &query_lower, &mut name_buf) {
+                        hit = Some((3000 + boost, MatchType::Tag));
+                        break;
                     }
                 }
-
-                // Category match
+            }
+            // Category match.
+            if hit.is_none() {
                 for cat in &app.categories {
-                    if cat.to_lowercase().starts_with(&query_lower) {
-                        return Some(SearchResult {
-                            entry: app.clone(),
-                            score: 2000 + usage_boost(app),
-                            match_type: MatchType::Category,
-                            action: ResultAction::Launch,
-                        });
+                    if starts_with_ignore_case(cat, &query_lower, &mut name_buf) {
+                        hit = Some((2000 + boost, MatchType::Category));
+                        break;
                     }
                 }
-
-                // Fuzzy match on searchable text
-                if let Some(score) = self.matcher.fuzzy_match(&searchable, query) {
-                    // Boost by launch count
-                    let boosted = score + usage_boost(app);
-                    return Some(SearchResult {
-                        entry: app.clone(),
-                        score: boosted,
-                        match_type: MatchType::Fuzzy,
-                        action: ResultAction::Launch,
-                    });
+            }
+            // Fuzzy match on the searchable blob, built only for candidates
+            // that nothing cheaper decided about.
+            if hit.is_none() {
+                write_searchable_text(app, aliases, &mut text_buf);
+                if let Some(fuzzy) = self.matcher.fuzzy_match(&text_buf, query) {
+                    hit = Some((fuzzy + boost, MatchType::Fuzzy));
                 }
+            }
 
-                None
-            })
-            .collect();
+            if let Some((score, match_type)) = hit {
+                scored.push((score, match_type, idx));
+            }
+        }
 
         // Sort by score descending, then by name so the order is stable.
-        results.sort_by(|a, b| {
-            b.score.cmp(&a.score).then_with(|| {
-                display_name(&a.entry, aliases)
-                    .to_lowercase()
-                    .cmp(&display_name(&b.entry, aliases).to_lowercase())
-            })
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| cmp_display_name(&apps[a.2], &apps[b.2], aliases, &mut name_buf))
         });
-        results.truncate(max_results);
+        scored.truncate(max_results);
+        let results: Vec<SearchResult> = scored
+            .into_iter()
+            .map(|(score, match_type, idx)| SearchResult {
+                entry: apps[idx].clone(),
+                score,
+                match_type,
+                action: ResultAction::Launch,
+            })
+            .collect();
         results
     }
 
     /// Get default apps to show when no search query (favorites + most used)
     pub fn get_default_apps(&self, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
-        let mut results: Vec<SearchResult> = apps
-            .iter()
-            .filter(|app| app.is_favorite || app.launch_count > 0)
-            .map(|app| {
-                let score = if app.is_favorite {
-                    10000 + app.launch_count as i64
-                } else {
-                    app.launch_count as i64
-                };
-                SearchResult {
-                    entry: app.clone(),
-                    score,
-                    match_type: if app.is_favorite {
-                        MatchType::Exact
-                    } else {
-                        MatchType::Fuzzy
-                    },
-                    action: ResultAction::Launch,
-                }
+        // Ranked by index, cloned after truncation, as in `search`.
+        let mut scored: Vec<(i64, MatchType, usize)> = Vec::new();
+        for (idx, app) in apps.iter().enumerate() {
+            if !(app.is_favorite || app.launch_count > 0) {
+                continue;
+            }
+            let score = if app.is_favorite {
+                10000 + app.launch_count as i64
+            } else {
+                app.launch_count as i64
+            };
+            let kind = if app.is_favorite {
+                MatchType::Exact
+            } else {
+                MatchType::Fuzzy
+            };
+            scored.push((score, kind, idx));
+        }
+        scored.sort_by_key(|a| std::cmp::Reverse(a.0));
+        scored.truncate(max_results);
+        scored
+            .into_iter()
+            .map(|(score, match_type, idx)| SearchResult {
+                entry: apps[idx].clone(),
+                score,
+                match_type,
+                action: ResultAction::Launch,
             })
-            .collect();
-
-        results.sort_by_key(|a| std::cmp::Reverse(a.score));
-        results.truncate(max_results);
-        results
+            .collect()
     }
 }
 
