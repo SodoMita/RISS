@@ -1,0 +1,33 @@
+name: Diagnostics
+
+on: pull_request
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  diagnose:
+    name: Emit compiler diagnostics as annotations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "test-build"
+          cache-on-failure: true
+
+      - name: cargo check (host)
+        run: python3 ci/emit_annotations.py cargo check --all-targets --message-format=json
+
+      - name: cargo clippy (host)
+        run: python3 ci/emit_annotations.py cargo clippy --all-targets --message-format=json -- -D warnings
+
+      - name: cargo check (android)
+        run: python3 ci/emit_annotations.py cargo check --target aarch64-linux-android --all-targets --message-format=json
