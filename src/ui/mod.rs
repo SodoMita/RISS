@@ -397,22 +397,46 @@ impl RissApp {
     /// setting, hiding apps the user excluded from history. Ties are broken
     /// by name so ordering is deterministic.
     fn apply_history_ordering(&mut self) {
-        if self.settings.enabled("exclude-favorites-history") {
-            self.results.retain(|r| !r.entry.is_favorite);
-        }
-        let excluded = self.history_excluded_set();
-        if !excluded.is_empty() {
-            self.results.retain(|r| !excluded.contains(&r.entry.exec));
-        }
         let mode = HistoryMode::from_key(self.settings.value("history-mode"));
+        let hide_favorites = self.settings.enabled("exclude-favorites-history");
+        let excluded = self.history_excluded_set();
+        Self::sort_history_results(
+            &mut self.results,
+            &self.history,
+            mode,
+            HistoryData::now_secs(),
+            hide_favorites,
+            &excluded,
+        );
+    }
+
+    /// Order the default (no-query) list for the history view (issue #22).
+    ///
+    /// A `&self`-free helper so the ordering is unit-testable without a UI:
+    /// the whole candidate list is ranked first and truncated later by the
+    /// caller, so the most recently launched app lands on top in recency
+    /// mode no matter its favorite status or lifetime launch count.
+    fn sort_history_results(
+        results: &mut Vec<SearchResult>,
+        history: &HistoryData,
+        mode: HistoryMode,
+        now: u64,
+        hide_favorites: bool,
+        excluded: &HashSet<String>,
+    ) {
+        if hide_favorites {
+            results.retain(|r| !r.entry.is_favorite);
+        }
+        if !excluded.is_empty() {
+            results.retain(|r| !excluded.contains(&r.entry.exec));
+        }
         if mode == HistoryMode::Alphabetical {
-            self.results.sort_by_key(|r| r.entry.name.to_lowercase());
+            results.sort_by_key(|r| r.entry.name.to_lowercase());
             return;
         }
-        let now = HistoryData::now_secs();
-        self.results.sort_by(|a, b| {
-            let score_a = self.history.rank_score(mode, &a.entry.exec, now);
-            let score_b = self.history.rank_score(mode, &b.entry.exec, now);
+        results.sort_by(|a, b| {
+            let score_a = history.rank_score(mode, &a.entry.exec, now);
+            let score_b = history.rank_score(mode, &b.entry.exec, now);
             score_b
                 .partial_cmp(&score_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -867,4 +891,65 @@ pub fn setup_fonts(ctx: &egui::Context) {
         }
     }
     ctx.set_fonts(fonts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn history_row(exec: &str, name: &str, favorite: bool) -> SearchResult {
+        let mut entry = AppEntry::virtual_entry(name, "", exec);
+        entry.is_favorite = favorite;
+        SearchResult {
+            entry,
+            score: 0,
+            match_type: MatchType::Fuzzy,
+            action: ResultAction::Launch,
+        }
+    }
+
+    #[test]
+    fn recency_puts_most_recent_first() {
+        let mut history = HistoryData::default();
+        // A heavy old favorite must still lose to a light recent launch.
+        for _ in 0..11 {
+            history.record_launch_at("heavy-old", 1000);
+        }
+        history.record_launch_at("recent-light", 5000);
+        let mut results = vec![
+            history_row("heavy-old", "Heavy Old", true),
+            history_row("recent-light", "Recent Light", false),
+        ];
+        RissApp::sort_history_results(
+            &mut results,
+            &history,
+            HistoryMode::Recency,
+            6000,
+            false,
+            &HashSet::new(),
+        );
+        assert_eq!(results[0].entry.exec, "recent-light");
+        assert_eq!(results[1].entry.exec, "heavy-old");
+    }
+
+    #[test]
+    fn hide_favorites_from_history_is_respected() {
+        let mut history = HistoryData::default();
+        history.record_launch_at("fav", 5000);
+        history.record_launch_at("plain", 4000);
+        let mut results = vec![
+            history_row("fav", "Fav", true),
+            history_row("plain", "Plain", false),
+        ];
+        RissApp::sort_history_results(
+            &mut results,
+            &history,
+            HistoryMode::Recency,
+            6000,
+            true,
+            &HashSet::new(),
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.exec, "plain");
+    }
 }
