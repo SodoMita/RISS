@@ -4,6 +4,9 @@ pub mod alloc_count;
 #[cfg(test)]
 mod perf {
     use super::alloc_count::measure;
+    #[cfg(target_os = "android")]
+    use crate::android_app_entry::AppEntry;
+    #[cfg(not(target_os = "android"))]
     use crate::app_entry::AppEntry;
     use crate::search::SearchEngine;
     use std::collections::HashMap;
