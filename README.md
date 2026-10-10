@@ -177,6 +177,20 @@ Modify the window size in `src/main.rs`:
 
 ## Development
 
+### Testing & tooling
+
+- `cargo fmt -- --check`, `cargo clippy -- -D warnings`, `cargo test` and an
+  Android `cargo check` run in CI on every pull request.
+- `bash scripts/gui-smoke-test.sh [xvfb|wayland]` starts the launcher on a
+  headless display and screenshots it (CI runs both modes and uploads the
+  screenshots as the `smoke-screenshots` artifact). Requires `xvfb` +
+  ImageMagick or `cage` + `grim`.
+- Building inside a network-restricted sandbox (no crates.io, no rustup, no
+  apt)? See [RESTRICTED-ENVIRONMENT.md](RESTRICTED-ENVIRONMENT.md) for the
+  verified bootstrap: Rust toolchain from npm, an offline vendored-sources
+  test harness, CI-as-compiler debugging, and GUI testing options (small
+  Wayland compositors included).
+
 ### Project Structure
 
 ```
