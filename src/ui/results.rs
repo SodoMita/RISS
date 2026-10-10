@@ -7,6 +7,7 @@ use crate::android_app_entry::AppEntry;
 use crate::app_entry::AppEntry;
 use crate::search::{self, MatchType, SearchResult};
 use eframe::egui::{self, Color32, CornerRadius, FontId, RichText, Sense, Stroke, Vec2};
+#[cfg(not(target_os = "android"))]
 use std::time::Instant;
 
 impl RissApp {
@@ -273,6 +274,7 @@ impl RissApp {
         let mut open_menu = false;
         let actions_width = if result.entry.is_virtual() { 0.0 } else { 60.0 };
         let shown = frame.show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.set_min_height(height - 12.0);
             ui.horizontal(|ui| {
                 if !self.settings.enabled("icons-hide") {
@@ -404,6 +406,7 @@ impl RissApp {
         let excluded_from_search = self.is_excluded_from_search(&result.entry);
         // A second press of "Uninstall" within the confirmation window runs
         // the removal; anything else just arms the confirmation.
+        #[cfg(not(target_os = "android"))]
         let uninstall_pending = self.pending_uninstall.as_ref().is_some_and(|(exec, at)| {
             *exec == result.entry.exec && at.elapsed() <= super::UNINSTALL_CONFIRM_WINDOW
         });
@@ -499,6 +502,9 @@ impl RissApp {
                     ui.close();
                 }
                 let uninstall_enabled = result.entry.can_uninstall();
+                #[cfg(target_os = "android")]
+                let uninstall_label = "Uninstall";
+                #[cfg(not(target_os = "android"))]
                 let uninstall_label = if uninstall_pending {
                     "Confirm uninstall"
                 } else {
@@ -509,7 +515,12 @@ impl RissApp {
                     .clicked()
                 {
                     uninstall = true;
+                    #[cfg(target_os = "android")]
                     ui.close();
+                    #[cfg(not(target_os = "android"))]
+                    if uninstall_pending {
+                        ui.close();
+                    }
                 }
                 ui.separator();
                 if ui.button("Copy name").clicked() {
@@ -604,22 +615,34 @@ impl RissApp {
         }
         if uninstall {
             let entry = result.entry.clone();
-            if uninstall_pending {
-                self.pending_uninstall = None;
+            #[cfg(target_os = "android")]
+            {
                 match entry.uninstall() {
                     Ok(()) => {
-                        self.reload_apps();
-                        self.set_status(format!("Uninstalling {}", shown_name));
+                        self.set_status(format!("Opening uninstaller for {}", shown_name));
                     }
                     Err(error) => self.set_status(error),
                 }
-            } else {
-                match entry.uninstall_preview() {
-                    Ok(summary) => {
-                        self.pending_uninstall = Some((entry.exec.clone(), Instant::now()));
-                        self.set_status(format!("{summary} — press Uninstall again to confirm"));
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                if uninstall_pending {
+                    self.pending_uninstall = None;
+                    match entry.uninstall() {
+                        Ok(()) => {
+                            self.reload_apps();
+                            self.set_status(format!("Uninstalling {}", shown_name));
+                        }
+                        Err(error) => self.set_status(error),
                     }
-                    Err(error) => self.set_status(error),
+                } else {
+                    match entry.uninstall_preview() {
+                        Ok(summary) => {
+                            self.pending_uninstall = Some((entry.exec.clone(), Instant::now()));
+                            self.set_status(format!("{summary} — press Confirm uninstall"));
+                        }
+                        Err(error) => self.set_status(error),
+                    }
                 }
             }
         }

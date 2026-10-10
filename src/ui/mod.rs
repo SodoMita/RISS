@@ -81,6 +81,8 @@ pub struct RissApp {
     /// "Uninstall" was first pressed. A destructive operation should not
     /// run on a single stray tap.
     pending_uninstall: Option<(String, Instant)>,
+    first_frame: bool,
+    surrender_search_focus: bool,
 }
 
 impl RissApp {
@@ -130,6 +132,8 @@ impl RissApp {
             osk: osk::OskTracker::new(&cc.egui_ctx),
             window_mode,
             pending_uninstall: None,
+            first_frame: true,
+            surrender_search_focus: false,
         };
         insets::watch(&cc.egui_ctx);
         app.reload_apps();
@@ -551,6 +555,9 @@ impl RissApp {
                 self.show_hidden = false;
                 self.reload_apps();
                 self.set_status(format!("Opened {}", name));
+                if self.settings.enabled("hide-keyboard") {
+                    self.surrender_search_focus = true;
+                }
             }
             Err(error) => self.set_status(error),
         }
@@ -808,6 +815,16 @@ impl eframe::App for RissApp {
         self.apply_visuals(ctx, p);
         self.icons.begin_frame();
         self.handle_keys(ctx);
+        if self.first_frame {
+            self.first_frame = false;
+            if self.settings.enabled("display-keyboard") {
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("riss-search")));
+            }
+        }
+        if self.surrender_search_focus {
+            self.surrender_search_focus = false;
+            ctx.memory_mut(|m| m.surrender_focus(egui::Id::new("riss-search")));
+        }
         if self
             .status_message
             .as_ref()
