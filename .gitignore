@@ -336,3 +336,6 @@ android/app/build/
 
 # GUI smoke-test screenshots and logs
 smoke-artifacts/
+
+# Headless GUI assertion frames (uploaded as a CI artifact, never committed)
+gui-artifacts/
