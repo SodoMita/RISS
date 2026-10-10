@@ -148,6 +148,13 @@ pub fn discover_apps_jni() -> Vec<AppEntry> {
             apps.push(entry);
         }
 
+        // A failed field/method lookup (e.g. ApplicationInfo.category on
+        // API 21-25) leaves a pending Java exception. Clear it so the next
+        // app in the list can still be processed (issue #13).
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+
         let _ = env.delete_local_ref(app_info);
     }
 
@@ -240,10 +247,38 @@ fn process_app_info(env: &mut JNIEnv, pm: &JObject, app_info: &JObject) -> Optio
     })
 }
 
+/// `ApplicationInfo.category` exists only from API 26. On API 21-25 the
+/// field lookup throws `NoSuchFieldError`; that exception must be cleared
+/// or the next JNI call on this thread crashes (issue #13).
+fn android_sdk_int(env: &mut JNIEnv) -> i32 {
+    static SDK_INT: OnceCell<i32> = OnceCell::new();
+    if let Some(v) = SDK_INT.get() {
+        return *v;
+    }
+    let value = env
+        .get_static_field("android/os/Build$VERSION", "SDK_INT", "I")
+        .ok()
+        .and_then(|v| v.i().ok())
+        .unwrap_or(0);
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+    let _ = SDK_INT.set(value);
+    value
+}
+
 fn get_app_category(env: &mut JNIEnv, app_info: &JObject) -> String {
+    if android_sdk_int(env) < 26 {
+        return String::new();
+    }
     let category_val = match env.get_field(app_info, "category", "I") {
         Ok(val) => val.i().unwrap_or(-1),
-        Err(_) => return String::new(),
+        Err(_) => {
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_clear();
+            }
+            return String::new();
+        }
     };
 
     match category_val {
