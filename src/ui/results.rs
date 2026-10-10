@@ -67,7 +67,7 @@ impl RissApp {
                     let shown_name = self.display_name(&app);
                     let (rect, response) =
                         ui.allocate_exact_size(Vec2::splat(icon_size), Sense::click());
-                    let response = response.on_hover_text(shown_name);
+                    let response = response.on_hover_text(shown_name.as_str());
                     let icon_texture =
                         if !self.settings.enabled("icons-hide") && ui.is_rect_visible(rect) {
                             self.icon_texture(ui.ctx(), &app)
