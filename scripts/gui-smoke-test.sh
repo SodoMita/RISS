@@ -22,10 +22,15 @@ SHOT="${OUT}/smoke-${MODE}.png"
 mkdir -p "$OUT"
 
 note() { echo "::notice::gui-smoke (${MODE}): $*"; }
+warn() { echo "::warning::gui-smoke (${MODE}): $*"; }
 fail() {
     echo "::error::gui-smoke (${MODE}): $*"
     if [ -s "$LOG" ]; then
-        tail -n 25 "$LOG" | while IFS= read -r line; do
+        grep -Ei "error|fail|panic|cannot|unable|warning" "$LOG" | tail -n 15 | while IFS= read -r line; do
+            echo "::error::log: ${line}"
+        done
+        echo "::error::log: ---- raw tail ----"
+        tail -n 10 "$LOG" | while IFS= read -r line; do
             echo "::error::log: ${line}"
         done
     fi
@@ -66,11 +71,29 @@ case "$MODE" in
         command -v grim >/dev/null || fail "grim missing (apt install grim)"
         export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$(mktemp -d)}"
         chmod 700 "$XDG_RUNTIME_DIR"
-        WLR_BACKENDS=headless \
+        # Native path: the launcher is a Wayland/EGL client, so push Mesa to
+        # its software renderer (llvmpipe) and let wlroots accept it.
+        if WLR_BACKENDS=headless \
             WLR_LIBINPUT_NO_DEVICES=1 \
             WLR_RENDERER_ALLOW_SOFTWARE=1 \
+            LIBGL_ALWAYS_SOFTWARE=1 \
+            GALLIUM_DRIVER=llvmpipe \
             cage -- bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
-            2>>"$LOG" || fail "cage session failed (see log)"
+            2>>"$LOG"; then
+            note "session: native Wayland (cage + llvmpipe)"
+        else
+            # Fallback: run the launcher as an X11 client on cage's Xwayland
+            # (pure software: pixman compositor + glamor sw fallback).
+            warn "native Wayland path failed — retrying through Xwayland (see ${LOG})"
+            mv "$LOG" "${LOG%.log}.native.log"
+            WLR_BACKENDS=headless \
+                WLR_LIBINPUT_NO_DEVICES=1 \
+                WLR_RENDERER=pixman \
+                cage -- env -u WAYLAND_DISPLAY DISPLAY="${DISPLAY:-:0}" \
+                    bash "$0" --run-child "$BIN" "$LOG" "$SHOT" "grim" \
+                2>>"$LOG" || fail "both native and Xwayland sessions failed (see log)"
+            note "session: Xwayland inside cage (native wayland path unavailable)"
+        fi
         ;;
     --run-child)
         # Internal: runs inside xvfb-run/cage. $2 bin, $3 log, $4 shot, $5 cmd.
