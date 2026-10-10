@@ -184,6 +184,7 @@ impl RissApp {
     /// special lists. Mirrors the KISS provider stack.
     fn provider_results(&self, query: &str, app_matches: usize) -> Vec<SearchResult> {
         let mut results: Vec<SearchResult> = Vec::new();
+        let query_lower = query.to_lowercase();
 
         // A digit bound to a shortcut jumps straight to that application.
         if let Some(digit) = query.parse::<u8>().ok().filter(|d| (1..=9).contains(d)) {
@@ -205,7 +206,6 @@ impl RissApp {
 
         // Settings provider: the settings can be searched from the query bar.
         if self.settings.enabled("enable-settings") {
-            let needle = query.to_lowercase();
             let mut hits: Vec<SearchResult> = crate::settings::specs()
                 .into_iter()
                 .filter(|spec| {
@@ -222,7 +222,7 @@ impl RissApp {
                     let haystack =
                         format!("{} {} {} {}", spec.section, spec.title, spec.key, value)
                             .to_lowercase();
-                    haystack.contains(&needle)
+                    haystack.contains(&query_lower)
                 })
                 .take(3)
                 .map(|spec| {
@@ -250,10 +250,11 @@ impl RissApp {
             }
         }
 
-        // Previously run web searches.
+        // Previously run web searches and shell commands resurface as the
+        // query narrows.
         if self.settings.enabled("search-through-history") {
             for previous in self.history.recent_searches(20) {
-                if previous.to_lowercase().contains(&query.to_lowercase()) {
+                if previous.to_lowercase().contains(&query_lower) {
                     let mut result = self.web_search_result(&previous);
                     result.entry.name = previous.clone();
                     result.score = 200;
@@ -261,11 +262,19 @@ impl RissApp {
                 }
             }
         }
+        if self.settings.enabled("enable-exec") {
+            for previous in self.history.recent_execs(10) {
+                if previous != query && previous.to_lowercase().contains(&query_lower) {
+                    let mut result = search::exec_result(&previous);
+                    result.score = 250;
+                    results.push(result);
+                }
+            }
+        }
 
         // The special lists stay reachable by typing their name.
         if query.len() > 2 {
-            let lowered = query.to_lowercase();
-            let special = match lowered.as_str() {
+            let special = match query_lower.as_str() {
                 "history" | "recent" => Some((ResultView::History, "History")),
                 "apps" | "all apps" | "all" => Some((ResultView::AllApps, "All applications")),
                 "settings" | "preferences" => Some((ResultView::Settings, "Settings")),
