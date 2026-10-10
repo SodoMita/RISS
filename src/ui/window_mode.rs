@@ -22,6 +22,14 @@ pub enum WindowMode {
 }
 
 impl WindowMode {
+    /// Default inner size of the desktop window (issue #51).
+    ///
+    /// A 600px-tall window does not fit a 600px-tall output once the
+    /// compositor adds decorations (KWin 6.3 measured 632px total, hiding
+    /// the search bar), so the default stays at 540 to leave room for them
+    /// on small displays while remaining useful on large ones.
+    pub const DEFAULT_INNER_SIZE: [f32; 2] = [400.0, 540.0];
+
     fn from_key(key: &str) -> Option<Self> {
         match key {
             "windowed" => Some(Self::Windowed),
@@ -67,5 +75,25 @@ impl WindowMode {
         // Leave fullscreen first so a maximize request is not swallowed.
         ctx.send_viewport_cmd(ViewportCommand::Fullscreen(self == Self::Fullscreen));
         ctx.send_viewport_cmd(ViewportCommand::Maximized(self == Self::Maximized));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_window_fits_small_outputs_with_decorations() {
+        // Issue #51: the default must leave room for compositor decorations
+        // on 600px-tall outputs without shrinking into uselessness.
+        let [width, height] = WindowMode::DEFAULT_INNER_SIZE;
+        assert!(
+            height + 40.0 <= 600.0,
+            "default height {height} leaves no room for decorations"
+        );
+        assert!(
+            (300.0..=500.0).contains(&width) && (480.0..600.0).contains(&height),
+            "default size {width}x{height} is not a useful window"
+        );
     }
 }

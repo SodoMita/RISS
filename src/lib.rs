@@ -90,7 +90,7 @@ fn main() -> eframe::Result {
     // through whenever the transparent theme is on; opaque themes clear with
     // full alpha, so nothing changes for them.
     let viewport = egui::ViewportBuilder::default()
-        .with_inner_size([400.0, 600.0])
+        .with_inner_size(ui::window_mode::WindowMode::DEFAULT_INNER_SIZE)
         .with_min_inner_size([300.0, 400.0])
         .with_transparent(true);
     let native_options = eframe::NativeOptions {
