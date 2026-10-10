@@ -539,3 +539,69 @@ pub fn launch_app_jni(package_name: &str) -> Result<(), String> {
     info!("Launched: {}", package_name);
     Ok(())
 }
+
+/// Launch the system package uninstaller for an application
+pub fn uninstall_app_jni(package_name: &str) -> Result<(), String> {
+    let app_guard = get_android_app().ok_or("AndroidApp not initialized")?;
+
+    let app: &AndroidApp = &*app_guard;
+    let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+    if vm_ptr.is_null() {
+        return Err("JavaVM pointer is null".to_string());
+    }
+
+    let vm = unsafe { jni::JavaVM::from_raw(vm_ptr) }
+        .map_err(|e| format!("Failed to create JavaVM: {:?}", e))?;
+
+    let activity_obj = app.activity_as_ptr() as jobject;
+    let activity = unsafe { JObject::from_raw(activity_obj) };
+
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("Failed to attach thread: {:?}", e))?;
+
+    let uri_string = env
+        .new_string(format!("package:{package_name}"))
+        .map_err(|e| format!("Failed to create URI string: {:?}", e))?;
+
+    let uri = env
+        .call_static_method(
+            "android/net/Uri",
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::Object(&uri_string)],
+        )
+        .map_err(|e| format!("Failed to parse Uri: {:?}", e))?
+        .l()
+        .map_err(|e| format!("Failed to get Uri object: {:?}", e))?;
+
+    let action = env
+        .new_string("android.intent.action.DELETE")
+        .map_err(|e| format!("Failed to create action string: {:?}", e))?;
+
+    let intent = env
+        .new_object(
+            "android/content/Intent",
+            "(Ljava/lang/String;Landroid/net/Uri;)V",
+            &[JValue::Object(&action), JValue::Object(&uri)],
+        )
+        .map_err(|e| format!("Failed to create Intent: {:?}", e))?;
+
+    let _ = env.call_method(
+        &intent,
+        "addFlags",
+        "(I)Landroid/content/Intent;",
+        &[JValue::Int(0x10000000)], // FLAG_ACTIVITY_NEW_TASK
+    );
+
+    env.call_method(
+        &activity,
+        "startActivity",
+        "(Landroid/content/Intent;)V",
+        &[JValue::Object(&intent)],
+    )
+    .map_err(|e| format!("Failed to start activity: {:?}", e))?;
+
+    info!("Uninstall launched for: {}", package_name);
+    Ok(())
+}

@@ -80,6 +80,33 @@ impl AppEntry {
             .map(|_| ())
             .map_err(|e| format!("Failed to launch {}: {}", self.name, e))
     }
+
+    /// Whether the Uninstall action can do anything for this entry.
+    ///
+    /// Virtual entries and the built-in shortcuts have nothing to
+    /// uninstall; for real apps the feasibility is decided when the
+    /// responsible package manager is resolved.
+    pub fn can_uninstall(&self) -> bool {
+        !self.is_virtual() && !self.desktop_file.as_os_str().is_empty()
+    }
+
+    /// Describe what Uninstall would do, without running anything.
+    ///
+    /// Resolves the package manager that installed the app so the
+    /// confirmation prompt can show the exact removal command.
+    pub fn uninstall_preview(&self) -> Result<String, String> {
+        crate::package_managers::plan(self).map(|plan| plan.summary)
+    }
+
+    /// Uninstall the application through the package manager that installed
+    /// it: Flatpak and Snap apps go through their own tools, AppImage
+    /// binaries and hand-placed desktop files are deleted directly, and
+    /// distro packages are removed with the native package manager,
+    /// escalating through `pkexec` or `sudo` as needed.
+    pub fn uninstall(&self) -> Result<(), String> {
+        let plan = crate::package_managers::plan(self)?;
+        crate::package_managers::execute(&plan)
+    }
 }
 
 pub type IconPixels = (usize, usize, Vec<u8>);

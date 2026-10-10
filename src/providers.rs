@@ -92,6 +92,76 @@ pub fn open_url(url: &str) -> Result<(), String> {
     }
 }
 
+/// Locate `program` on `PATH`, returning its full path.
+#[cfg(not(target_os = "android"))]
+pub fn find_in_path(program: &str) -> Option<std::path::PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(program))
+        .find(|dir| is_executable_file(dir))
+}
+
+#[cfg(not(target_os = "android"))]
+fn is_executable_file(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+/// Is `program` available on `PATH`?
+#[cfg(not(target_os = "android"))]
+pub fn command_exists(program: &str) -> bool {
+    find_in_path(program).is_some()
+}
+
+/// Run a command inside a terminal emulator so the user can follow
+/// interactive prompts, e.g. the `sudo` password entry used when `pkexec`
+/// is unavailable for privileged uninstalls.
+#[cfg(not(target_os = "android"))]
+pub fn run_in_terminal(argv: &[String]) -> Result<(), String> {
+    // (terminal, flags preceding the command) — every flag variant passes
+    // the remaining arguments as the program to execute.
+    const TERMINALS: &[(&str, &[&str])] = &[
+        ("x-terminal-emulator", &["-e"]),
+        ("gnome-terminal", &["--"]),
+        ("mate-terminal", &["--"]),
+        ("konsole", &["-e"]),
+        ("xfce4-terminal", &["-x"]),
+        ("terminator", &["-x"]),
+        ("alacritty", &["-e"]),
+        ("foot", &["-e"]),
+        ("kitty", &[]),
+        ("xterm", &["-e"]),
+        ("wezterm", &["start", "--"]),
+    ];
+    for (terminal, flags) in TERMINALS {
+        if find_in_path(terminal).is_none() {
+            continue;
+        }
+        let mut full: Vec<String> = vec![(*terminal).to_string()];
+        full.extend(flags.iter().map(|flag| (*flag).to_string()));
+        full.extend(argv.iter().cloned());
+        let Some((program, args)) = full.split_first() else {
+            continue;
+        };
+        if std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "No terminal emulator found to run {}",
+        argv.join(" ")
+    ))
+}
+
 /// Run a shell command in the background (KISS' `exec` provider).
 pub fn run_command(command: &str) -> Result<(), String> {
     #[cfg(target_os = "android")]

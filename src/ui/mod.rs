@@ -21,6 +21,10 @@ mod widgets;
 use colors::Palette;
 use favorites::FavDrag;
 
+/// How long the Uninstall action waits for its confirmation click before
+/// the first press expires.
+const UNINSTALL_CONFIRM_WINDOW: Duration = Duration::from_secs(6);
+
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
     Launcher,
@@ -62,6 +66,10 @@ pub struct RissApp {
     startup_notes: Vec<String>,
     /// Running countdown: total seconds and the start time.
     timer: Option<(u64, Instant)>,
+    /// Pending uninstall confirmation: the entry's exec and the moment
+    /// "Uninstall" was first pressed. A destructive operation should not
+    /// run on a single stray tap.
+    pending_uninstall: Option<(String, Instant)>,
 }
 
 impl RissApp {
@@ -96,6 +104,7 @@ impl RissApp {
             last_empty_tap: None,
             startup_notes,
             timer: None,
+            pending_uninstall: None,
         };
         app.reload_apps();
         app
@@ -726,6 +735,13 @@ impl eframe::App for RissApp {
             .is_some_and(|(_, at)| at.elapsed() > Duration::from_secs(3))
         {
             self.status_message = None;
+        }
+        if self
+            .pending_uninstall
+            .as_ref()
+            .is_some_and(|(_, at)| at.elapsed() > UNINSTALL_CONFIRM_WINDOW)
+        {
+            self.pending_uninstall = None;
         }
         self.timer_tick();
         if !self.startup_notes.is_empty() {
