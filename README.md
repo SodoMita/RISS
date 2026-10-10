@@ -163,27 +163,21 @@ riss_launcher --fullscreen   # also: --maximized, --windowed
 ```
 
 ### On-Screen Keyboards (Linux)
-Wayland gives apps no way to learn where an on-screen keyboard is, so RISS
-keeps the search bar visible like this:
+Wayland never tells apps where the on-screen keyboard is. KWin, sway (tiled)
+and phoc shrink windowed/maximized windows for it and GNOME slides them up, but
+fullscreen windows get covered, so RISS keeps the bottom free itself while a
+keyboard is up. It knows the keyboard is up from KWin or `sm.puri.OSK0`
+(squeekboard) over D-Bus, or otherwise when you tap the search field on a
+touchscreen.
 
-| Situation | What happens |
-|-----------|--------------|
-| Windowed/maximized on KWin, sway (tiled), phoc | The compositor shrinks the window; the search bar follows the bottom edge. |
-| GNOME Shell | GNOME slides the window up so the text cursor stays visible. |
-| Fullscreen (any compositor), or a compositor that overlaps windows | RISS keeps the bottom of the window free while the keyboard is up. |
-
-RISS can tell the keyboard is up from KWin's virtual keyboard or from any
-keyboard implementing `sm.puri.OSK0` (squeekboard), both read over D-Bus.
-Without either, it assumes a keyboard opens when you tap the search field on a
-touchscreen. Under **Settings → Keyboard**:
-
-- *Keyboard space*: `auto` (above), `always` (reserve space whenever a text
-  field is focused, for keyboards RISS cannot detect, such as wvkbd) or `off`.
-- *Keyboard height, portrait/landscape %*: how much of the screen to keep
-  free, since the real keyboard height is not available.
+The keyboard height is measured whenever the compositor shrinks a screen-sized
+RISS window for it (e.g. maximized on KWin), separately for portrait and
+landscape, and reused in fullscreen. Under **Settings → Keyboard** you can
+switch measuring off, set the heights by hand, or set *Keyboard space* to
+`always` (for keyboards RISS cannot detect, such as wvkbd) or `off`.
 
 D-Bus detection is the default `osk-dbus` Cargo feature; build with
-`--no-default-features` to drop it (and the `zbus` dependency).
+`--no-default-features` to drop it and the `zbus` dependency.
 
 ## Development
 
