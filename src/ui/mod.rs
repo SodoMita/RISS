@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 mod colors;
 mod favorites;
 mod icons;
+pub(crate) mod insets;
 mod results;
 mod search_bar;
 mod settings;
@@ -62,10 +63,12 @@ pub struct RissApp {
     startup_notes: Vec<String>,
     /// Running countdown: total seconds and the start time.
     timer: Option<(u64, Instant)>,
+    /// Window area covered by the on-screen keyboard and system bars.
+    insets: insets::InsetTracker,
 }
 
 impl RissApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let (settings, mut startup_notes) = SettingsData::load();
         let (history, history_notes) = HistoryData::load();
         startup_notes.extend(history_notes);
@@ -96,6 +99,7 @@ impl RissApp {
             last_empty_tap: None,
             startup_notes,
             timer: None,
+            insets: insets::InsetTracker::new(&cc.egui_ctx),
         };
         app.reload_apps();
         app
@@ -672,8 +676,10 @@ impl RissApp {
             0.0
         };
 
-        // Panels are laid out from the window edges, so the search bar stays
-        // above the Android keyboard and pinned to the bottom on every resize.
+        // Panels are laid out from the edges of the visible area (the window
+        // minus the insets reserved in `update`), so the search bar stays
+        // pinned right above the on-screen keyboard and results scroll in the
+        // space left above it.
         egui::TopBottomPanel::bottom("launcher-search")
             .exact_height(search_height + status_height + 20.0)
             .frame(
@@ -732,6 +738,9 @@ impl eframe::App for RissApp {
             let notes = std::mem::take(&mut self.startup_notes);
             self.set_status(notes.join(" • "));
         }
+        // Reserve the parts of the window hidden behind the on-screen keyboard
+        // or system bars before laying out anything else.
+        self.insets.update(ctx).reserve(ctx, p.bg);
         match self.screen {
             Screen::Launcher => self.show_launcher(ctx, p),
             Screen::Settings => self.show_settings(ctx, p),
