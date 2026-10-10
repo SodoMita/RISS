@@ -187,7 +187,6 @@ impl RissApp {
                 Err(e) => self.set_status(e),
             }
         }
-        }
     }
 
     pub(super) fn show_results(&mut self, ui: &mut egui::Ui, p: Palette) {

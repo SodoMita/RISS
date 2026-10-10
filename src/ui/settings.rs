@@ -4,6 +4,10 @@ use crate::storage;
 use eframe::egui::{self, CornerRadius, RichText, Vec2};
 
 impl RissApp {
+    /// The settings screen stays solid (`p.bg`, not `p.panel`) the way KISS
+    /// opens its preferences in an ordinary opaque activity: a long scrolling
+    /// list of small text needs a predictable background. The launcher screen
+    /// is the one that shows the wallpaper.
     pub(super) fn show_settings(&mut self, ctx: &egui::Context, p: Palette) {
         egui::TopBottomPanel::top("settings-header")
             .frame(

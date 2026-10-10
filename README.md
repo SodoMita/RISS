@@ -34,6 +34,8 @@ A minimalist application launcher inspired by RISS Launcher for Android, built w
 
 🎨 **Themes** - Dark, light, transparent, accent-color, icon, result-size, and layout controls
 
+🖼️ **Wallpaper** - The transparent theme shows the home-screen wallpaper behind the launcher on Android (results, search bar and settings keep solid backgrounds)
+
 ## Installation
 
 ### Prerequisites
