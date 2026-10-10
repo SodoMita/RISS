@@ -32,7 +32,7 @@ fn main() -> eframe::Result {
         .with_min_inner_size([300.0, 400.0])
         .with_transparent(true);
     let native_options = eframe::NativeOptions {
-        viewport: ui::window_mode::WindowMode::at_startup(&settings).apply_to_builder(viewport),
+        viewport: ui::window_mode::WindowMode::apply_startup(&settings, viewport),
         ..Default::default()
     };
 
