@@ -2,6 +2,9 @@
 name = "riss_launcher"
 version = "0.1.0"
 edition = "2021"
+# Minimum supported Rust: the committed lockfile needs at least this
+# (notably uuid 1.28 requires Rust 1.89). See issue #52.
+rust-version = "1.89"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
