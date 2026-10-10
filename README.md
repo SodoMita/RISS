@@ -133,7 +133,7 @@ The launcher features:
 ## Customization
 
 ### Colors
-Colors are defined in `src/ui.rs` in the `Colors` struct. You can customize the theme by modifying these constants:
+Colors are defined in `src/ui/colors.rs` in the `Palette` struct. You can customize the theme by modifying these constants:
 
 ```rust
 struct Colors;
@@ -162,7 +162,13 @@ riss-launcher/
 ├── src/
 │   ├── main.rs          # Entry point
 │   ├── lib.rs           # Android entry point (cdylib)
-│   ├── ui.rs            # UI components and main app state
+│   ├── ui/              # UI layer, split into focused modules
+│   │   ├── mod.rs       # App state, frame entry point and launcher layout
+│   │   ├── colors.rs    # Theme/color management
+│   │   ├── search_bar.rs # Search input and keyboard handling
+│   │   ├── results.rs   # Results list rendering
+│   │   ├── settings.rs  # Settings screen
+│   │   └── touch.rs     # Touch gesture handling
 │   ├── app_entry.rs     # App discovery and .desktop file parsing
 │   ├── android_app_entry.rs  # Android app discovery and launching via JNI
 │   ├── search.rs        # Search engine and fuzzy matching
@@ -229,7 +235,7 @@ The optimized binary will be in `target/release/riss_launcher`.
 ### Font issues
 - The app tries to load DejaVu Sans from system fonts
 - Falls back to egui's default font if not found
-- You can customize font loading in `src/ui.rs`
+- You can customize font loading in `src/ui/mod.rs`
 
 ## License
 
