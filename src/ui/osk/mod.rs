@@ -48,6 +48,10 @@ impl OskVisibility {
     }
 }
 
+/// Height the launcher layout needs to stay operable: the search panel plus one
+/// result row. Reserving more than `screen - this` clips the query field.
+const MIN_LAYOUT_HEIGHT: f32 = 120.0;
+
 /// Whether to reserve space, per the `osk-space` setting.
 fn needs_room(mode: &str, keyboard: bool, text_focused: bool, covers_monitor: bool) -> bool {
     match mode {
@@ -80,6 +84,21 @@ fn height_key(size: Vec2) -> &'static str {
     } else {
         "osk-height-portrait"
     }
+}
+
+/// How much height the keyboard may take, capped so the launcher stays
+/// usable.
+///
+/// The percentage is a fraction of the *screen*, which is a fine model for a
+/// phone and a bad one for a short landscape output: on an 800x360 display
+/// `osk-height-landscape=80` reserved 288pt and left 72, while the search
+/// panel alone needs 92 (72pt for the field plus 20pt of padding) — so the
+/// field was pushed off screen by the very code meant to keep it visible
+/// (issue #50). A reservation can never be worth more than the layout can
+/// afford to give.
+fn room_for(screen_height: f32, percent: usize) -> f32 {
+    let wanted = (screen_height * percent as f32 / 100.0).round();
+    wanted.min((screen_height - MIN_LAYOUT_HEIGHT).max(0.0))
 }
 
 pub struct OskTracker {
@@ -138,7 +157,7 @@ impl OskTracker {
             return (0.0, stored);
         }
         let percent = settings.number(height_key(screen), 40).min(80);
-        ((screen.y * percent as f32 / 100.0).round(), stored)
+        (room_for(screen.y, percent), stored)
     }
 
     /// Whether the latest pointer input was a touch: egui sends `Touch`
@@ -171,6 +190,28 @@ fn store_height(settings: &mut SettingsData, key: &str, percent: usize) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_short_screen_cannot_be_all_keyboard() {
+        // The case from issue #50: 800x360 output, 80% keyboard height.
+        assert_eq!(
+            room_for(360.0, 80),
+            240.0,
+            "clipped to what the layout can pay"
+        );
+        assert!(
+            360.0 - room_for(360.0, 80) >= MIN_LAYOUT_HEIGHT,
+            "the search panel must survive the reservation"
+        );
+    }
+
+    #[test]
+    fn normal_screens_keep_the_requested_fraction() {
+        assert_eq!(room_for(720.0, 40), 288.0);
+        assert_eq!(room_for(2000.0, 45), 900.0);
+        // Nothing reserved when the display is already too short to share.
+        assert_eq!(room_for(90.0, 80), 0.0);
+    }
 
     const PHONE: Vec2 = egui::vec2(360.0, 800.0);
 
