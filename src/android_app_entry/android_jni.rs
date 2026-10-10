@@ -604,4 +604,88 @@ pub fn uninstall_app_jni(package_name: &str) -> Result<(), String> {
 
     info!("Uninstall launched for: {}", package_name);
     Ok(())
+
+/// `android.graphics.PixelFormat.TRANSLUCENT`: let the system pick a pixel
+/// format with alpha bits.
+const PIXEL_FORMAT_TRANSLUCENT: i32 = -3;
+
+/// Give the launcher window an alpha channel so the home-screen wallpaper can
+/// be seen through it.
+///
+/// `NativeActivity.onCreate()` hard-codes `getWindow().setFormat(RGB_565)`, and
+/// a 16-bit window has no alpha bits at all: the launcher is opaque no matter
+/// which theme or background colour it draws, so the wallpaper behind it is
+/// never visible (issue #32). `Window.setFormat` is the public way back out —
+/// `NativeActivity.setWindowFormat`, i.e. the `ANativeActivity_setWindowFormat`
+/// NDK call, is nothing but a wrapper around it.
+///
+/// The manifest side of this is `Theme.Wallpaper`, which asks the window
+/// manager to draw the wallpaper behind the activity; without an alpha channel
+/// here that request cannot be honoured.
+///
+/// Window APIs have to be called on the Java main thread while `android_main`
+/// runs on its own thread, so the call is queued to the main looper (which
+/// `android_activity` wakes through an event fd). That puts it ahead of the
+/// window's first traversal, and the surface is only created by that
+/// traversal — so the very first surface already has alpha.
+pub fn make_window_translucent_jni() {
+    let app = match get_android_app() {
+        Some(guard) => guard.clone(),
+        None => {
+            error!("AndroidApp not initialized; the window keeps its opaque format");
+            return;
+        }
+    };
+
+    app.run_on_java_main_thread(Box::new(move || {
+        let vm_ptr = app.vm_as_ptr() as *mut JavaVMPtr;
+        if vm_ptr.is_null() {
+            error!("JavaVM pointer is null; cannot make the window translucent");
+            return;
+        }
+        let vm = match unsafe { jni::JavaVM::from_raw(vm_ptr) } {
+            Ok(vm) => vm,
+            Err(e) => {
+                error!("Failed to create JavaVM: {:?}", e);
+                return;
+            }
+        };
+        // The main thread is already attached; jni turns that into a no-op
+        // guard, so this never detaches it again.
+        let mut env = match vm.attach_current_thread() {
+            Ok(env) => env,
+            Err(e) => {
+                error!("Failed to attach thread: {:?}", e);
+                return;
+            }
+        };
+
+        let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as jobject) };
+        let window = match env
+            .call_method(&activity, "getWindow", "()Landroid/view/Window;", &[])
+            .and_then(|value| value.l())
+        {
+            Ok(window) if !window.is_null() => window,
+            Ok(_) => {
+                error!("getWindow() returned null; the window stays opaque");
+                return;
+            }
+            Err(e) => {
+                error!("getWindow() failed: {:?}", e);
+                return;
+            }
+        };
+
+        // Window.setFormat(PixelFormat.TRANSLUCENT)
+        if let Err(e) = env.call_method(
+            &window,
+            "setFormat",
+            "(I)V",
+            &[JValue::Int(PIXEL_FORMAT_TRANSLUCENT)],
+        ) {
+            error!("Failed to set the window format: {:?}", e);
+            return;
+        }
+        info!("Window format set to TRANSLUCENT: the wallpaper can show through");
+    }));
 }

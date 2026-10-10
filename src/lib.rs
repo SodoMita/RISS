@@ -46,11 +46,20 @@ fn android_main(app: AndroidApp) {
         android_app_entry::android_jni::set_android_app(app.clone());
     });
 
+    // NativeActivity gives the window an RGB_565 format, which has no alpha
+    // bits, so the home-screen wallpaper can never be seen behind the launcher
+    // (issue #32). Ask for a format with alpha before the surface is created.
+    android_app_entry::android_jni::make_window_translucent_jni();
+
     log::info!("Starting eframe with Android support");
 
-    // Configure eframe with Android app handle
+    // Configure eframe with Android app handle. The viewport asks for a
+    // transparency capable framebuffer so the window's alpha is not thrown
+    // away; whether anything is actually see-through is decided per frame by
+    // `RissApp::clear_color` and the palette.
     let options = eframe::NativeOptions {
         android_app: Some(app),
+        viewport: egui::ViewportBuilder::default().with_transparent(true),
         ..Default::default()
     };
 

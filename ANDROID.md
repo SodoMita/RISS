@@ -160,7 +160,46 @@ To make this a fully functional Android launcher:
 4. **Add app icons** from package manager
 5. **Implement as a proper launcher** with HOME category intent filter
 6. **Add widget support** (optional)
-7. **Implement wallpaper support** (optional)
+7. ~~**Implement wallpaper support**~~ ✅ Done — see [Wallpaper](#wallpaper)
+
+## Wallpaper
+
+A launcher is the home screen, so the wallpaper belongs to the system and the
+launcher window has to be see-through for it to show. Three separate things
+have to line up, and all three are required:
+
+1. **Ask the window manager for the wallpaper** — `android/AndroidManifest.xml`
+   gives the activity `android:theme="@android:style/Theme.Wallpaper.NoTitleBar"`.
+   That theme sets `windowShowWallpaper`, which `PhoneWindow` turns into
+   `FLAG_SHOW_WALLPAPER`, plus a transparent window background and no
+   background cache hint. (`android:showWallpaper` is *not* a valid
+   `<activity>` attribute — it belongs to the `WindowAnimation` styleable — so
+   the theme is the only way to ask for it here.)
+
+2. **Give the window an alpha channel** — `NativeActivity.onCreate()`
+   hard-codes `getWindow().setFormat(RGB_565)`, and a 16-bit window has no
+   alpha bits, so the launcher is opaque whatever it draws.
+   `android_jni::make_window_translucent_jni()` calls
+   `Window.setFormat(PixelFormat.TRANSLUCENT)` on the Java main thread before
+   the surface is created. It logs the result under the `RissLauncher` tag, so
+   `adb logcat | grep RissLauncher` shows whether it took effect.
+
+3. **Draw transparently** — the palette paints the launcher panels with
+   `Palette::panel`, which is `Color32::TRANSPARENT` while the wallpaper shows,
+   and `RissApp::clear_color` clears the framebuffer with alpha 0 (eframe's
+   default clear colour is a nearly opaque grey). The eframe viewport is
+   created with `with_transparent(true)` so the framebuffer has alpha to begin
+   with.
+
+The user-facing switches are the existing KISS preferences: the **Theme** has
+to be `transparent` (the default; `light` and `dark` stay solid) and
+**Wallpaper visibility** must not be `hide`. Result rows, the search bar and
+the settings screen keep solid backgrounds so they stay readable over an
+arbitrary wallpaper.
+
+To check it on a device: set a distinctive wallpaper, open the launcher, and
+confirm the wallpaper is visible between the results; then set
+*Wallpaper visibility → hide* and confirm the background turns solid.
 
 ## Support
 

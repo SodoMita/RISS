@@ -93,7 +93,10 @@ Make RISS a dependable, minimal Android home launcher while preserving its Linux
 ## Open Questions
 
 1. **Provider scope**: Implement KISS-style providers or remain app-only?
-2. **Theme transparency**: Show wallpaper or rename the theme?
+2. ~~**Theme transparency**: Show wallpaper or rename the theme?~~ Decided:
+   the transparent theme shows the home-screen wallpaper on Android (issue
+   #32, see [ANDROID.md](./ANDROID.md#wallpaper)). Desktop windows stay solid
+   for now — a transparent window there needs a compositing window manager.
 3. **Play Store**: Is QUERY_ALL_PACKAGES acceptable?
 
 ## Contributing
