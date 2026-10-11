@@ -217,9 +217,10 @@ impl RissApp {
                 .id_salt("kiss-results")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    let row_height = self.result_row_pitch(ui);
                     let results = self.results.clone();
                     for (index, result) in results.iter().enumerate() {
-                        self.show_result(ui, index, result, p);
+                        self.show_result(ui, index, result, p, row_height);
                     }
                     self.gesture_below_rows(ui);
                 });
@@ -230,7 +231,7 @@ impl RissApp {
         // KISS binds only the visible children of its ListView. IconCache
         // already stops a flick from decoding every PNG; this stops the flick
         // from *building* every row. That second half is the scroll latency.
-        let row_height = self.result_row_pitch();
+        let row_height = self.result_row_pitch(ui);
         let total = self.results.len();
         self.reveal_selection(ui, row_height);
         let generation = self.list_generation;
@@ -245,10 +246,16 @@ impl RissApp {
             })
             .show_rows(ui, row_height, total, |ui, range| {
                 for index in range {
-                    let width = ui.available_width();
-                    ui.allocate_ui(Vec2::new(width, row_height), |ui| {
-                        self.show_result(ui, index, &results[index], p);
-                    });
+                    // Exactly the slot `show_rows` reserved. `allocate_ui`
+                    // advanced by whatever the row used instead, so rows
+                    // drifted off the positions the list computed.
+                    let (_, slot) = ui.allocate_space(Vec2::new(ui.available_width(), row_height));
+                    let mut row = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(slot)
+                            .id_salt(("result-row", index)),
+                    );
+                    self.show_result(&mut row, index, &results[index], p, row_height);
                 }
             });
         if self.list_generation == generation {
@@ -259,19 +266,36 @@ impl RissApp {
         self.drain_deferred();
     }
 
-    fn result_row_pitch(&self) -> f32 {
-        let mut height = match self.settings.value("results-size") {
-            "small" => 56.0,
-            "large" => 88.0,
-            _ => 72.0,
+    /// Height of every result row: the slot `show_rows` reserves and the
+    /// row fills. It must be the row's real height, or the virtual list
+    /// places rows by the wrong arithmetic. The old constants (72pt, plus
+    /// 16 for each of the comment and tag lines, both on by default) said
+    /// 104pt for a 60pt row, so the list drew too few rows and left a
+    /// quarter of the screen blank above the search bar.
+    ///
+    /// Built from the same fonts and margins `show_result` uses. A comment
+    /// or tag line is counted only when some row actually shows one.
+    fn result_row_pitch(&self, ui: &egui::Ui) -> f32 {
+        let base: f32 = match self.settings.value("results-size") {
+            "small" => 48.0,
+            "large" => 76.0,
+            _ => 60.0,
         };
-        if self.settings.enabled("subicon-visible") {
-            height += 16.0;
+        let line = |size: f32| ui.fonts(|fonts| fonts.row_height(&FontId::proportional(size)));
+        let gap = ui.spacing().item_spacing.y;
+        let mut text = line(16.0);
+        if self.settings.enabled("subicon-visible")
+            && self.results.iter().any(|r| !r.entry.comment.is_empty())
+        {
+            text += gap + line(11.0);
         }
-        if self.settings.enabled("tags-visible") {
-            height += 16.0;
+        if self.settings.enabled("tags-visible")
+            && self.results.iter().any(|r| !r.entry.tags.is_empty())
+        {
+            text += gap + line(10.0);
         }
-        height
+        // 12 = the row frame's inner margin, top plus bottom.
+        base.max((text + 12.0).ceil())
     }
 
     fn reveal_selection(&mut self, ui: &mut egui::Ui, row_height: f32) {
@@ -365,18 +389,20 @@ impl RissApp {
         }
     }
 
-    fn show_result(&mut self, ui: &mut egui::Ui, index: usize, result: &SearchResult, p: Palette) {
+    fn show_result(
+        &mut self,
+        ui: &mut egui::Ui,
+        index: usize,
+        result: &SearchResult,
+        p: Palette,
+        height: f32,
+    ) {
         let rounded = if self.settings.enabled("pref-rounded-list") {
             14
         } else {
             5
         };
         let selected = index == self.selected_index;
-        let height = match self.settings.value("results-size") {
-            "small" => 48.0,
-            "large" => 76.0,
-            _ => 60.0,
-        };
         let shown_name = self.display_name(&result.entry);
         let mut icon_check_rect = ui.available_rect_before_wrap();
         icon_check_rect.max.y = (icon_check_rect.min.y + height).min(icon_check_rect.max.y);
@@ -444,32 +470,43 @@ impl RissApp {
                 ui.allocate_ui(Vec2::new(text_width, height - 12.0), |ui| {
                     ui.set_min_width(text_width);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(&shown_name).size(16.0).color(
+                        // One line each, elided like KISS's list items: a
+                        // wrapped line would outgrow the row's slot.
+                        let name_color =
                             if result.match_type == MatchType::Exact && !self.query.is_empty() {
                                 p.accent
                             } else {
                                 p.text
-                            },
-                        ));
+                            };
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&shown_name).size(16.0).color(name_color),
+                            )
+                            .truncate(),
+                        );
                         if self.settings.enabled("subicon-visible")
                             && !result.entry.comment.is_empty()
                         {
-                            ui.label(RichText::new(&result.entry.comment).size(11.0).color(p.dim));
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&result.entry.comment).size(11.0).color(p.dim),
+                                )
+                                .truncate(),
+                            );
                         }
                         if self.settings.enabled("tags-visible") && !result.entry.tags.is_empty() {
-                            ui.label(
-                                RichText::new(
-                                    result
-                                        .entry
-                                        .tags
-                                        .iter()
-                                        .map(|t| format!("#{t}"))
-                                        .collect::<Vec<_>>()
-                                        .join("  "),
-                                )
-                                .size(10.0)
-                                .color(p.accent),
-                            );
+                            let tags = RichText::new(
+                                result
+                                    .entry
+                                    .tags
+                                    .iter()
+                                    .map(|t| format!("#{t}"))
+                                    .collect::<Vec<_>>()
+                                    .join("  "),
+                            )
+                            .size(10.0)
+                            .color(p.accent);
+                            ui.add(egui::Label::new(tags).truncate());
                         }
                     });
                 });
