@@ -264,18 +264,27 @@ impl SearchEngine {
         results
     }
 
-    /// Get default apps to show when no search query (favorites + most used)
+    /// Get default apps to show when no search query (favorites + recently used).
     pub fn get_default_apps(&self, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
         // Ranked by index, cloned after truncation, as in `search`.
+        //
+        // Favorites are pinned above every non-favorite. Among non-favorites the
+        // order is recency (`last_launched`, most-recent first) rather than
+        // lifetime launch count: ranking by count first and only *then*
+        // truncating to `max_results` could drop a just-launched app while
+        // keeping apps launched long ago (issue #22). An app counts as "used" as
+        // soon as it has any of a favorite flag, a launch count, or a recorded
+        // launch time.
+        const FAVORITE_FLOOR: i64 = 1i64 << 62;
         let mut scored: Vec<(i64, MatchType, usize)> = Vec::new();
         for (idx, app) in apps.iter().enumerate() {
-            if !(app.is_favorite || app.launch_count > 0) {
+            if !(app.is_favorite || app.launch_count > 0 || app.last_launched > 0) {
                 continue;
             }
             let score = if app.is_favorite {
-                10000 + app.launch_count as i64
+                FAVORITE_FLOOR + app.launch_count as i64
             } else {
-                app.launch_count as i64
+                app.last_launched as i64
             };
             let kind = if app.is_favorite {
                 MatchType::Exact
@@ -627,6 +636,52 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.match_type == MatchType::Category));
         assert_eq!(results[0].entry.exec, "gamma");
+    }
+
+    #[test]
+    fn default_apps_never_drop_a_just_launched_app() {
+        // Issue #22: the default list must not omit an app merely because it
+        // has a low lifetime launch count. A freshly launched app should appear
+        // ahead of older, more-frequently-used apps once the list is capped.
+        let engine = SearchEngine::new();
+
+        // 20 long-time apps, each launched once a long time ago.
+        let mut apps = Vec::new();
+        for i in 0..20 {
+            let mut app = AppEntry::virtual_entry(
+                &format!("Old {i}"),
+                "util",
+                &format!("old-{i}"),
+            );
+            app.launch_count = 1;
+            app.last_launched = 1_000_000 + i as u64;
+            apps.push(app);
+        }
+        // One app launched just now but only once.
+        let mut fresh = AppEntry::virtual_entry("Just Now", "util", "just-now");
+        fresh.launch_count = 1;
+        fresh.last_launched = 9_999_999;
+        apps.push(fresh);
+
+        let results = engine.get_default_apps(&apps, 20);
+        assert!(
+            results.iter().any(|r| r.entry.exec == "just-now"),
+            "the just-launched app must survive the 20-item cap"
+        );
+        assert_eq!(results[0].entry.exec, "just-now");
+    }
+
+    #[test]
+    fn default_apps_pin_favorites_above_recency() {
+        let engine = SearchEngine::new();
+        let mut old_fav = AppEntry::virtual_entry("Pinned", "util", "pinned");
+        old_fav.is_favorite = true;
+        old_fav.last_launched = 1; // ancient
+        let mut fresh = AppEntry::virtual_entry("Fresh", "util", "fresh");
+        fresh.last_launched = 9_999_999; // just launched
+        let apps = vec![old_fav, fresh];
+        let results = engine.get_default_apps(&apps, 20);
+        assert_eq!(results[0].entry.exec, "pinned");
     }
 
     #[test]
