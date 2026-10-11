@@ -89,6 +89,16 @@ pub struct RissApp {
     /// Generation of the search whose outcome we are willing to paint.
     /// Anything else is stale and is thrown away.
     expected_search_generation: u64,
+    /// Generation of the search currently on screen. Equal to
+    /// `expected_search_generation` once the answer has landed.
+    applied_search_generation: u64,
+    /// Test-only: ignore the provider-loading worker.
+    ///
+    /// The constructor kicks off a real app discovery, so a headless test
+    /// that installs a known app list would have it overwritten the moment
+    /// the host's `.desktop` scan finished. Production never sets this.
+    #[cfg(test)]
+    ignore_loader: bool,
     /// A UI-thread searcher for the modal favourites picker, so there is one
     /// scoring dialect in the process and not two.
     picker_searcher: KissSearcher,
@@ -153,6 +163,19 @@ impl RissApp {
     pub fn with_settings(
         cc: &eframe::CreationContext<'_>,
         settings: SettingsData,
+        startup_notes: Vec<String>,
+    ) -> Self {
+        Self::with_context(&cc.egui_ctx, settings, startup_notes)
+    }
+
+    /// The real constructor, taking the context directly.
+    ///
+    /// `eframe::CreationContext` cannot be built outside eframe, so every
+    /// headless test of the live path would otherwise have to re-implement
+    /// the app's wiring and test a replica instead of the product.
+    pub fn with_context(
+        egui_ctx: &egui::Context,
+        settings: SettingsData,
         mut startup_notes: Vec<String>,
     ) -> Self {
         let (history, history_notes) = HistoryData::load();
@@ -167,14 +190,17 @@ impl RissApp {
             index: Arc::new(AppIndex::new(0)),
             data_generation: 0,
             search_worker: {
-                let ctx = cc.egui_ctx.clone();
+                let ctx = egui_ctx.clone();
                 SearchWorker::new(move || ctx.request_repaint())
             },
             app_loader: {
-                let ctx = cc.egui_ctx.clone();
+                let ctx = egui_ctx.clone();
                 AppLoader::new(load_app_entries, move || ctx.request_repaint())
             },
             expected_search_generation: 0,
+            applied_search_generation: 0,
+            #[cfg(test)]
+            ignore_loader: false,
             picker_searcher: KissSearcher::new(),
             max_result_count: None,
             history,
@@ -199,7 +225,7 @@ impl RissApp {
             last_empty_tap: None,
             startup_notes,
             timer: None,
-            osk: osk::OskTracker::new(&cc.egui_ctx),
+            osk: osk::OskTracker::new(egui_ctx),
             window_mode,
             pending_uninstall: None,
             fling_velocity: 0.0,
@@ -211,10 +237,10 @@ impl RissApp {
         };
         // egui's native default is 40px per wheel line. The result list adds
         // velocity on top of this; the settings screen just needs to not crawl.
-        cc.egui_ctx.options_mut(|options| {
+        egui_ctx.options_mut(|options| {
             options.input_options.line_scroll_speed = 96.0;
         });
-        insets::watch(&cc.egui_ctx);
+        insets::watch(egui_ctx);
         app.reload_apps();
         app
     }
@@ -362,13 +388,20 @@ impl RissApp {
     /// Drain the two workers. Called once per frame, before anything is
     /// painted; neither call blocks.
     fn poll_workers(&mut self) {
-        if let Some(loaded) = self.app_loader.poll() {
-            self.apply_loaded_apps(loaded.entries);
+        #[cfg(test)]
+        let loader_enabled = !self.ignore_loader;
+        #[cfg(not(test))]
+        let loader_enabled = true;
+        if loader_enabled {
+            if let Some(loaded) = self.app_loader.poll() {
+                self.apply_loaded_apps(loaded.entries);
+            }
         }
         if let Some(outcome) = self.search_worker.poll(self.data_generation) {
             // Stale-result guard: only the generation we are still waiting
             // for may be painted.
             if outcome.generation == self.expected_search_generation {
+                self.applied_search_generation = outcome.generation;
                 self.apply_search_outcome(&outcome.hits);
             }
         }
@@ -752,12 +785,16 @@ impl RissApp {
             app.last_launched = self.history.get_last_launched(&app.exec);
             app.is_favorite = self.history.is_favorite(&app.exec);
         }
-        for app in &mut self.apps {
-            app.launch_count = self.history.get_launch_count(&app.exec);
-            app.last_launched = self.history.get_last_launched(&app.exec);
-            app.is_favorite = self.history.is_favorite(&app.exec);
-        }
-        self.update_results();
+        // Rebuilding the index is what makes the change *visible*: the rows
+        // the UI paints come from `index`, not from `apps`, so stamping the
+        // two Vecs and stopping there would leave a freshly starred app
+        // showing a hollow star until the next disk rescan.
+        //
+        // No I/O happens here -- `rebuild_index` only re-derives the
+        // exclusion filter and the normalized names from `all_apps`, which
+        // is why a launch can afford it and a package change cannot be
+        // skipped.
+        self.rebuild_index();
     }
 
     fn launch_exec(&mut self, exec: &str) {
@@ -1168,6 +1205,74 @@ impl RissApp {
                 action: ResultAction::Launch,
             })
             .collect()
+    }
+}
+
+/// Hooks used by `crate::tests::live_app` to drive the real application
+/// object without a window.
+///
+/// Each one is a thin wrapper over the production call the UI makes, so a
+/// test exercises the shipped code rather than a replica. They are
+/// `#[cfg(test)]`, so none of this exists in a release build.
+#[cfg(test)]
+impl RissApp {
+    /// What the provider-loading worker's answer does when it lands.
+    pub(crate) fn install_apps_for_test(&mut self, entries: Vec<AppEntry>) {
+        // The constructor started a real discovery of the host's installed
+        // apps. Pin the list so that scan cannot land on top of the fixture.
+        self.ignore_loader = true;
+        self.apply_loaded_apps(entries);
+    }
+
+    /// What a keystroke in the search bar does.
+    pub(crate) fn set_query_for_test(&mut self, query: &str) {
+        self.query = query.to_string();
+        self.update_results();
+    }
+
+    /// What the first statement of `eframe::App::update` does.
+    pub(crate) fn poll_workers_for_test(&mut self) {
+        self.poll_workers();
+    }
+
+    /// True while a submitted search has not yet been applied.
+    pub(crate) fn search_pending_for_test(&self) -> bool {
+        !self.query.trim().is_empty()
+            && self.expected_search_generation != u64::MAX
+            && self.applied_search_generation != self.expected_search_generation
+    }
+
+    pub(crate) fn result_names_for_test(&self) -> Vec<String> {
+        self.results
+            .iter()
+            .filter(|r| r.action == ResultAction::Launch && !r.entry.is_virtual())
+            .map(|r| r.entry.name.clone())
+            .collect()
+    }
+
+    pub(crate) fn result_is_favorite_for_test(&self, index: usize) -> bool {
+        self.results[index].entry.is_favorite
+    }
+
+    /// What the star button does.
+    pub(crate) fn toggle_favorite_for_test(&mut self, exec: &str) {
+        self.history.toggle_favorite(exec);
+        self.reapply_usage();
+    }
+
+    /// What a launch records.
+    pub(crate) fn record_query_launch_for_test(&mut self, query: &str, exec: &str) {
+        self.history.record_launch(exec);
+        self.history.record_launch_for_query(query, exec);
+        self.reapply_usage();
+    }
+
+    /// What the settings screen does.
+    pub(crate) fn set_setting_for_test(&mut self, key: &str, value: &str) {
+        self.settings
+            .values
+            .insert(key.to_string(), value.to_string());
+        self.invalidate_search_cache();
     }
 }
 

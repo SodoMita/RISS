@@ -2,6 +2,8 @@
 //! hot path, plus the live-path integration tests.
 pub mod alloc_count;
 #[cfg(test)]
+mod live_app;
+#[cfg(test)]
 mod live_search;
 
 #[cfg(test)]

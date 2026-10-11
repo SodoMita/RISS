@@ -145,9 +145,26 @@ Ported from upstream:
 * `FuzzyScoreV2Test.testReusedMatchInfoScore` - a reused scorer must not leak
   the previous candidate's score into a non-match.
 
-Added, through the live path (`src/tests/live_search.rs` drives the real
-`SearchWorker` and reads results back through the same generation guards the
-UI uses): accents/diacritics both directions, case insensitivity with the
+Added at two levels.
+
+`src/tests/live_app.rs` drives **the real `RissApp`** - the same constructor
+the binary uses, the same `update_results`, the same `poll_workers` that
+`eframe::App::update` calls first on every frame, the same generation guards,
+and the same `self.results` the result list paints from. What it does not
+cover is egui's painting (that is `scripts/gui-assertions.sh`, which needs a
+compositor) and the platform app discovery (`discover_apps` reads the host's
+`.desktop` files, which a test must not depend on). 12 tests: a typed query
+paints matches, `cafe` finds `Café`, `visualstudio` finds `Visual-Studio`,
+`vb` finds `VirtualBox`, a Cyrillic query matches, comments and categories are
+*not* searchable, clearing the query drops the result rows, eight keystrokes
+with no pumping leave the last query's answer on screen, a reload mid-typing
+cannot strand a row from the replaced list, favouriting shows on the painted
+row, launching teaches the next search of that query only, and the
+`number-of-display-elements` preference reaches the live list through the
+Java parse.
+
+`src/tests/live_search.rs` drives the real `SearchWorker` and reads results
+back through the same generation guards: accents/diacritics both directions, case insensitivity with the
 lowercasing flag off, four non-Latin scripts, dashes, camel case, equal-score
 ordering (both input orders), result limits including 0, limits derived from
 the parsed preference, excluded apps with and without the preference, disabled
@@ -163,7 +180,7 @@ point, `String.compareTo` UTF-16 ordering vs Rust's code-point ordering,
 `Double.valueOf(...).intValue()` including `Infinity` / `NaN` / saturation /
 Rust-only spellings, and `HistoryMode.valueById`'s fallback.
 
-`cargo test` **169 passed / 0 failed** (was 110 on `main`).
+`cargo test` **181 passed / 0 failed** (was 110 on `main`).
 
 ## 8. Measurements
 
@@ -178,9 +195,17 @@ Hardware/OS: Intel Xeon @ 2.60 GHz, 4 cores, Linux 6.1.158 x86_64, container.
 
 | mode | measurement |
 |---|---|
-| release (`cargo test --release`, `opt-level="s"`, thin LTO) | mean **305.9 µs/query**, worst **638.9 µs**, 400 queries |
-| release | **0 allocations, 0 bytes** for 8 queries x 1,200 candidates |
+| release (`cargo test --release`, `opt-level="s"`, thin LTO) | mean **305.9 µs/query**, worst 638.9 µs, 400 queries |
+| release, re-provisioned container, same build | mean **482.9 µs/query**, worst 1.28 ms, 400 queries |
+| release | **0 allocations, 0 bytes** for 8 queries x 1,200 candidates, both runs |
 | debug | 0 allocations; latency not quoted (dev profile, meaningless) |
+
+Both latency rows are reported rather than the prettier one: the same binary
+measured 1.6x apart on two provisionings of the same container shape, which
+is what a shared virtualised host does to wall-clock. The allocation count
+was byte-identical across both runs, which is the point - it is the figure
+that is actually a contract. Treat the latency as "well under a millisecond
+per keystroke on a 1,200-app drawer", not as a benchmark score.
 
 Allocation behaviour was verified with the existing counting allocator
 (`src/tests/alloc_count.rs`), not by reading the code. Three real allocations
@@ -211,7 +236,7 @@ for the pre-#37 code was 89,112 allocations per keystroke.
 ```sh
 cargo fmt                                              # clean
 cargo clippy --all-targets -- -D warnings              # clean
-cargo test                                             # 169 passed / 0 failed
+cargo test                                             # 181 passed / 0 failed
 cargo test --release --lib -- --nocapture tests::perf  # benchmark above
 cargo check --target aarch64-linux-android --lib       # Android
 ```
@@ -253,3 +278,10 @@ Named, not papered over.
    very large drawer this is a one-off cost per reload, not per keystroke.
 9. No on-device Android run. `cargo check --target aarch64-linux-android`
    is a compile check, not a device test, and is reported as such.
+10. **No compositor run of this branch.** `scripts/gui-assertions.sh` needs
+    `sway`, `grim` and ImageMagick, none of which are installable in this
+    sandbox. `src/tests/live_app.rs` covers everything up to egui's painting,
+    so the gap is specifically "do these rows reach actual pixels" - the one
+    thing the repo's GUI job exists for. Cherry fixed that job's apt names on
+    `main@3afbe77`; this branch should ride it before anyone calls it done on
+    a device.
