@@ -26,7 +26,7 @@ use winit::platform::android::activity::AndroidApp;
 #[no_mangle]
 fn android_main(app: AndroidApp) {
     use log::LevelFilter;
-    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     // Initialize logger FIRST so we can see crashes
     android_logger::init_once(
@@ -42,12 +42,33 @@ fn android_main(app: AndroidApp) {
         log::error!("PANIC: {}", info);
     }));
 
-    // Store AndroidApp for JNI calls (use OnceLock to avoid re-initialization)
-    static ANDROID_APP_INITIALIZED: OnceLock<()> = OnceLock::new();
-    ANDROID_APP_INITIALIZED.get_or_init(|| {
-        log::info!("Storing AndroidApp for JNI calls");
-        android_app_entry::android_jni::set_android_app(app.clone());
-    });
+    // `android_main` runs once per Activity *instance*, not once per process
+    // (see the android-activity crate docs). When Android destroys and
+    // recreates the Activity while the process lives on, this second run
+    // can never work:
+    //  - winit 0.30 builds one EventLoop per process; a second build fails
+    //    with `EventLoopError::RecreationAttempt` (winit src/event_loop.rs),
+    //    so `eframe::run_native` below would return an error at once;
+    //  - winit's Android backend does not leave the first loop on
+    //    `MainEvent::Destroy` (a TODO in platform_impl/android), so the old
+    //    loop keeps the old, destroyed Activity;
+    //  - the JNI helpers would keep using that destroyed Activity, so its
+    //    internal data path is gone and settings/history fall back to the
+    //    unwritable working directory (issue #19).
+    // Returning makes android-activity finish the new Activity, and Android
+    // relaunches the home screen into the same dead process: the launcher
+    // never comes back until the process is killed. Start over instead: a
+    // fresh process gets fresh statics and Android relaunches the pending
+    // Activity into it. The manifest's configChanges keep this path rare.
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    if STARTED.swap(true, Ordering::SeqCst) {
+        log::warn!(
+            "Activity recreated inside a live process; restarting the process \
+             because winit cannot build a second event loop"
+        );
+        std::process::exit(0);
+    }
+    android_app_entry::android_jni::set_android_app(app.clone());
 
     // NativeActivity gives the window an RGB_565 format, which has no alpha
     // bits, so the home-screen wallpaper can never be seen behind the launcher
