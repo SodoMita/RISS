@@ -4,6 +4,7 @@
 - ✅ **#22** fixed + tested on `plan/moth-triage` (`bd16817`).
 - 🔎 **#19** (Android relative paths): already resolved — `storage.rs::platform_data_dir` returns `internal_data_path()` on Android; no `HistoryData::path()` relative method remains. Mark for close after a device check.
 - 🔎 **#58** (stale list): already resolved — `reapply_usage()` stamps usage onto both `all_apps` and `apps` and calls `update_results()` after launch/reset/tag edits. Mark for close after a smoke test.
+- ✅ **#13** (JNI category API 21-25) FIXED on branch: `get_app_category`'s error path now clears the pending Java exception before returning, so the following `delete_local_ref` in the discover loop no longer aborts discovery on API 21-25. (Kestrel's SDK_INT guard was never merged into main, so this was still live.) Android-only — verified by `aarch64-android check` + an API-21 device.
 - Left **#57** to `fix/uninstall-escalation` owner to avoid a second dialect.
 
 Legend: CLOSE = believed fixed on main, needs human verify then close · FIX = work remaining · DECIDE = needs owner call.
@@ -12,7 +13,7 @@ Legend: CLOSE = believed fixed on main, needs human verify then close · FIX = w
 | # | Title | Evidence on main |
 |---|---|---|
 | 31 | LICENSE | `LICENSE` exists at repo root |
-| 13 | JNI category API 21-25 | SDK_INT guard + exception_clear (kestrel, ab0dded) |
+| 13 | JNI category API 21-25 | NOT on main: kestrel's guard was never merged. `get_app_category` error path still returns without `exception_clear` (android_jni.rs). ✅ FIXED on branch. |
 | 40/49/66/38/67 | BrowserBack, kbd prefs, full-width rows, settings UI, Android uninstall | ab0dded |
 | 37/35/7 | perf / scroll accel / scrolling | 3174c06 virtualisation, fling.rs, 4a240f0 alloc cut (see #37 numbers) |
 | 34/14/8 | icons | IconCache c9dfcf9 — verify real PNG/SVG in bottom bar (#34 specifically SVG) |
