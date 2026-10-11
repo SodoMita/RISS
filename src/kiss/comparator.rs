@@ -1,6 +1,7 @@
 //! Faithful port of KISS's comparator chain.
 //!
-//! Upstream (Neamar/KISS, `app/src/main/java/fr/neamar/kiss/pojo/`):
+//! Upstream: Neamar/KISS pinned at `17fc7ebd473bbcbfc0e93592859278443cdb4ec0`,
+//! `app/src/main/java/fr/neamar/kiss/pojo/`:
 //!
 //! * `NameComparator.compare(lhs, rhs)`:
 //!   1. `lhs.normalizedName.compareTo(rhs.normalizedName)` when both are
@@ -77,7 +78,7 @@ pub fn sort_for_display<T: Ranked>(rows: &mut [T]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kiss::normalizer::normalize;
+    use crate::kiss::normalizer::normalize_lowercase;
 
     struct Row {
         name: String,
@@ -89,7 +90,7 @@ mod tests {
         fn new(name: &str, score: i64) -> Self {
             Self {
                 name: name.to_string(),
-                key: normalize(name),
+                key: normalize_lowercase(name),
                 score,
             }
         }

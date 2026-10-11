@@ -1,13 +1,25 @@
 //! Faithful port of KISS `QuerySearcher`'s relevance adjustments, the
 //! `HistoryMode` enum, and `Searcher`'s bounded queue.
 //!
-//! Upstream (Neamar/KISS):
-//! * `searcher/Searcher.java` — `DEFAULT_MAX_RESULTS = 50`; results collect
-//!   into a `PriorityQueue(DEFAULT_MAX_RESULTS, new RelevanceComparator())`
-//!   and `onPostExecute` evicts with
-//!   `while (queue.size() > maxResults) queue.poll();`. It is a min-heap, so
-//!   the LOWEST relevance is dropped and the highest survive. Search runs on a
-//!   dedicated `SEARCH_THREAD` and is cancellable (`isCancelled()`).
+//! Upstream: Neamar/KISS pinned at `17fc7ebd473bbcbfc0e93592859278443cdb4ec0`.
+//!
+//! * `searcher/Searcher.java` — `DEFAULT_MAX_RESULTS = 50`. Results collect
+//!   into `new PriorityQueue<>(DEFAULT_MAX_RESULTS, new RelevanceComparator())`.
+//!
+//!   That constructor argument is the queue's *initial capacity*, NOT a cap:
+//!   `java.util.PriorityQueue` grows without bound, so every result added
+//!   during the search is retained. The trim happens afterwards, in
+//!   `onPostExecute`:
+//!   `while (queue.size() > maxResults) queue.poll();`
+//!   It is a min-heap ordered by `RelevanceComparator`, so `poll()` removes the
+//!   *least* relevant and the highest-relevance rows survive.
+//!
+//!   (An earlier revision of this file and of PORTING.md claimed KISS "bounds
+//!   while collecting". It does not. Corrected here so the next reader does not
+//!   inherit the error.)
+//!
+//!   Search runs on a dedicated `SEARCH_THREAD` and is cancellable
+//!   (`isCancelled()` is checked in `addResults`).
 //! * `searcher/QuerySearcher.java` — `addResults` adjusts each pojo before it
 //!   enters the queue:
 //!   ```java
@@ -29,6 +41,8 @@
 //! ported here; `adjusted_relevance` takes them as given, exactly as
 //! `addResults` does. Wiring a real history store into this is the follow-up
 //! that makes the query-keyed boost live.
+
+use crate::kiss::comparator::{relevance_compare, Ranked};
 
 /// KISS `db/HistoryMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,9 +86,27 @@ pub const DEFAULT_MAX_RESULTS: usize = 50;
 
 /// KISS `QuerySearcher.getMaxResultCount`, minus the static cache.
 ///
-/// Parses through `f64` (as KISS parses through `Double`) then truncates toward
-/// zero, so an oversized preference saturates instead of throwing. Anything
-/// unparseable falls back to [`DEFAULT_MAX_RESULTS`].
+/// KISS does, verbatim:
+/// ```java
+/// MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-display-elements",
+///         String.valueOf(DEFAULT_MAX_RESULTS))).intValue();
+/// // catch (NumberFormatException e) -> DEFAULT_MAX_RESULTS
+/// ```
+///
+/// DELIBERATE DEVIATIONS (not upstream behaviour — flagged rather than hidden):
+/// * KISS has no finiteness check. `Double.valueOf("NaN")` and `"Infinity"`
+///   parse, and `intValue()` yields `0` and `Integer.MAX_VALUE` respectively.
+///   Here non-finite input falls back to [`DEFAULT_MAX_RESULTS`] instead,
+///   because a `0` result limit renders an empty list with no way back.
+/// * KISS can produce a negative count (`"-5".intValue() == -5`), which its
+///   `while (queue.size() > maxResults)` loop then treats as "drain
+///   everything". Here it is clamped to `0` because the return type is
+///   `usize`; the observable effect of a negative preference is the same
+///   (no results), but the value is not identical.
+///
+/// Faithful parts: parsing through `f64` (as Java parses through `Double`) so
+/// an oversized preference saturates instead of throwing, truncation toward
+/// zero, and the [`DEFAULT_MAX_RESULTS`] fallback for unparseable input.
 pub fn max_result_count(pref: &str) -> usize {
     let trimmed = pref.trim();
     if trimmed.is_empty() {
@@ -120,17 +152,20 @@ pub fn adjusted_relevance(
     relevance + boost
 }
 
-/// KISS `Searcher.onPostExecute` eviction: keep the `max_results` highest
-/// relevance rows, dropping the lowest as a min-heap would.
+/// KISS `Searcher.onPostExecute` eviction:
+/// `while (queue.size() > maxResults) queue.poll();`
 ///
-/// Survivors are returned in the order KISS drains its queue — ascending
-/// relevance, because its ListView starts at the bottom. Callers that display
-/// best-first should use `comparator::sort_for_display` instead.
-pub fn bounded_top_k<T, F>(mut items: Vec<T>, max_results: usize, relevance_of: F) -> Vec<T>
-where
-    F: Fn(&T) -> i64,
-{
-    items.sort_by_key(|a| relevance_of(a));
+/// Ordering is `RelevanceComparator` in full — relevance ascending, ties broken
+/// by `ReversedNameComparator` — not relevance alone. The tie-break decides
+/// which row is dropped when several sit on the capacity boundary with equal
+/// relevance, so using a bare relevance sort here would silently diverge from
+/// upstream exactly at the cut.
+///
+/// Survivors are returned in the order KISS drains its queue (ascending
+/// relevance, because its ListView starts at the bottom). Callers that display
+/// best-first should use [`crate::kiss::comparator::sort_for_display`].
+pub fn bounded_top_k<T: Ranked>(mut items: Vec<T>, max_results: usize) -> Vec<T> {
+    items.sort_by(|a, b| relevance_compare(a, b));
     if items.len() > max_results {
         let drop = items.len() - max_results;
         items.drain(0..drop);
@@ -141,6 +176,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kiss::normalizer::normalize_with_result;
+
+    struct Row {
+        name: String,
+        key: String,
+        score: i64,
+    }
+
+    impl Ranked for Row {
+        fn relevance(&self) -> i64 {
+            self.score
+        }
+        fn normalized_name(&self) -> &str {
+            &self.key
+        }
+        fn display_name(&self) -> &str {
+            &self.name
+        }
+    }
+
+    fn row(name: &str, score: i64) -> Row {
+        Row {
+            name: name.to_string(),
+            key: normalize_with_result(name, true).to_string(),
+            score,
+        }
+    }
 
     #[test]
     fn history_mode_falls_back_to_recency() {
@@ -233,17 +295,43 @@ mod tests {
 
     #[test]
     fn bounded_top_k_evicts_lowest() {
-        let items = vec![("low", 1i64), ("high", 100), ("mid", 50)];
-        let kept = bounded_top_k(items, 2, |(_, r)| *r);
-        let names: Vec<&str> = kept.iter().map(|(n, _)| *n).collect();
+        let items = vec![row("low", 1), row("high", 100), row("mid", 50)];
+        let kept = bounded_top_k(items, 2);
+        let names: Vec<&str> = kept.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["mid", "high"]); // ascending drain order
     }
 
     #[test]
     fn bounded_top_k_keeps_all_under_capacity() {
-        let items = vec![("a", 5i64), ("b", 9)];
-        let kept = bounded_top_k(items, DEFAULT_MAX_RESULTS, |(_, r)| *r);
+        let items = vec![row("a", 5), row("b", 9)];
+        let kept = bounded_top_k(items, DEFAULT_MAX_RESULTS);
         assert_eq!(kept.len(), 2);
-        assert_eq!(kept[0].0, "a");
+        assert_eq!(kept[0].name, "a");
+    }
+
+    #[test]
+    fn eviction_tie_break_matches_relevance_comparator() {
+        // Three rows, two tied on relevance, capacity 2. Which tied row is
+        // dropped is decided by RelevanceComparator's reversed-name fallback,
+        // not by insertion order -- this is the case a bare relevance sort
+        // would get wrong.
+        let items = vec![row("Apple", 10), row("Banana", 10), row("Top", 99)];
+        let kept = bounded_top_k(items, 2);
+        let names: Vec<&str> = kept.iter().map(|r| r.name.as_str()).collect();
+        // RelevanceComparator ties fall through to ReversedNameComparator,
+        // i.e. NameComparator(rhs, lhs). So compare(Apple, Banana) is Greater
+        // and the ascending drain order is [Banana, Apple, Top]; poll() takes
+        // from the front, dropping "Banana".
+        //
+        // Read the other way round: display order is the reverse of the drain,
+        // so at equal relevance the alphabetically FIRST name is the one shown
+        // highest -- and therefore the alphabetically LAST is the one evicted
+        // at the capacity boundary. That is the same rule that puts "Files"
+        // above "Firefox" in comparator::tests.
+        assert_eq!(names, vec!["Apple", "Top"]);
+
+        // And the survivors really are in KISS's drain order, not display
+        // order: ascending relevance.
+        assert!(kept[0].relevance() <= kept[1].relevance());
     }
 }
