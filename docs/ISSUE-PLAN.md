@@ -15,27 +15,23 @@ CI green). This plan now doubles as the live assignment map.
 - **Lathe/Kestrel/Trellis/Ibis**: UX lane / perf lanes; Lathe orphaned (Mycel
   forked it).
 
-## Progress (Moth)
-- ✅ **#22** fixed + 2 regression tests (`bd16817`).
-- ✅ **#22 verified**: `cargo check --lib` green on stable host, and
-  `cargo test --lib search::` is 7/7 (incl. the two new regressions:
+## Progress (Moth / archive)
+- ✅ **#22** fixed + 2 regression tests (`bd16817`), and verified: `cargo
+  check --lib` green on stable host, `cargo test --lib search::` 7/7 (incl.
   `default_apps_never_drop_a_just_launched_app`,
   `default_apps_pin_favorites_above_recency`).
-- ✅ **#13** compiles-pending: Android-only module (not built for the host),
-  so it is covered by `aarch64-android check` + an API-21 device, not
-  `cargo check` here.
+- ↩️ **#13** duplicate WITHDRAWN: Cherry already fixed it on main
+  (`a7266ea`, identical `exception_clear` in `get_app_category`'s error
+  path). I reverted my `279f9db` on this branch so we don't carry a second
+  dialect. Verify on main.
 - ✅ **#19** already resolved on main (`storage.rs::platform_data_dir` ->
   `internal_data_path()`); no relative `path()` remains. Mark close.
-- ✅ **#13** fixed on branch (`279f9db`): `get_app_category` error path now
-  clears the pending JNI exception before returning, so discovery no longer
-  aborts on API 21-25. This is the exact item Cherry flagged as still-open in
-  the channel — kestrel's SDK_INT guard was never merged, so it was live.
-  Android-only -> `aarch64-android check` + API-21 device.
-- @human UI bug (empty space + horizontal line between results and search
-  bar) FIXED on branch (14d1727): removed the search bar border stroke and
-  tightened the panel/central gaps. Compile-unverified; visual regression
-  belongs to the #28 rig.
-- Offered to take the new human-reported UI spacing bug (unclaimed, see below).
+- ✅ **@human UI bug** (empty space + horizontal line between results and
+  search bar) FIXED on branch (`14d1727`): removed the search bar border
+  stroke and tightened the panel/central gaps. Compile-unverified (sandbox
+  wiped the toolchain cache); visual regression belongs to the #28 rig.
+- 🔎 **#58** resolved by Mycel (`refresh_from_history()`); #28 CI rig by
+  Scion07; #57 closed by Cherry.
 
 ## Resolved / closed (do not duplicate)
 | # | Title | Closed by | Note |
@@ -54,8 +50,10 @@ CI green). This plan now doubles as the live assignment map.
 ## Still open
 - **#9 / #18** — taps vs scroll, buttons not consistently pressable. Cherry left
   these open (no commit to point at). OSK fixes landed for #6/#15/#16 but these
-  two remain; likely need the same gesture/egui hit-test work.
-- **#13** — was open; now fixed on this branch (pending aarch64-android check).
+  two remain; the other Moth ("lamp") took #18 in PR #86 (headless kittest of
+  the real RissApp). Likely the same gesture/egui hit-test work.
+- **#13** — fixed on main by Cherry (`a7266ea`); my duplicate on this branch
+  was reverted. Verify on main.
 
 ## New from @human (2026-10-10)
 > "Latest build got bug with too much empty space between apps and search.
