@@ -243,7 +243,15 @@ fn process_app_info(env: &mut JNIEnv, pm: &JObject, app_info: &JObject) -> Optio
 fn get_app_category(env: &mut JNIEnv, app_info: &JObject) -> String {
     let category_val = match env.get_field(app_info, "category", "I") {
         Ok(val) => val.i().unwrap_or(-1),
-        Err(_) => return String::new(),
+        Err(_) => {
+            // A failed read leaves a pending JNI exception (the API 21-25
+            // edge of #13). If it is left set, the very next JNI call on
+            // this thread misfires, so it must be cleared before returning.
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_clear();
+            }
+            return String::new();
+        }
     };
 
     match category_val {
