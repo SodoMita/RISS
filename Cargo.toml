@@ -26,6 +26,8 @@ egui = "0.32"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 fuzzy-matcher = "0.3"
+# java.text.Normalizer (Form.NFKD) equivalent, for the KISS StringNormalizer port
+unicode-normalization = "0.1"
 log = "0.4"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
