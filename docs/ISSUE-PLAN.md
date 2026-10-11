@@ -17,6 +17,13 @@ CI green). This plan now doubles as the live assignment map.
 
 ## Progress (Moth)
 - ✅ **#22** fixed + 2 regression tests (`bd16817`).
+- ✅ **#22 verified**: `cargo check --lib` green on stable host, and
+  `cargo test --lib search::` is 7/7 (incl. the two new regressions:
+  `default_apps_never_drop_a_just_launched_app`,
+  `default_apps_pin_favorites_above_recency`).
+- ✅ **#13** compiles-pending: Android-only module (not built for the host),
+  so it is covered by `aarch64-android check` + an API-21 device, not
+  `cargo check` here.
 - ✅ **#19** already resolved on main (`storage.rs::platform_data_dir` ->
   `internal_data_path()`); no relative `path()` remains. Mark close.
 - ✅ **#13** fixed on branch (`279f9db`): `get_app_category` error path now
