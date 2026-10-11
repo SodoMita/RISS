@@ -1,5 +1,11 @@
 # Open-issue triage & fix plan (branch plan/moth-triage, base main 97e0bb1)
 
+## Progress (Moth)
+- ✅ **#22** fixed + tested on `plan/moth-triage` (`bd16817`).
+- 🔎 **#19** (Android relative paths): already resolved — `storage.rs::platform_data_dir` returns `internal_data_path()` on Android; no `HistoryData::path()` relative method remains. Mark for close after a device check.
+- 🔎 **#58** (stale list): already resolved — `reapply_usage()` stamps usage onto both `all_apps` and `apps` and calls `update_results()` after launch/reset/tag edits. Mark for close after a smoke test.
+- Left **#57** to `fix/uninstall-escalation` owner to avoid a second dialect.
+
 Legend: CLOSE = believed fixed on main, needs human verify then close · FIX = work remaining · DECIDE = needs owner call.
 
 ## Wave 0 — verify & close (no code, cheap wins)
