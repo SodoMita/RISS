@@ -34,8 +34,13 @@ jobs:
           # sway provides the Wayland compositor, wlroots the headless backend,
           # mesa provides llvmpipe software GL: no GPU on the runner, and the
           # launcher must still be drawn for real.
+          # libegl1/libglx0 are the virtual packages: they resolve to
+          # libegl1-mesa + libglx-mesa0 on Debian bookworm and to
+          # libegl-mesa0 + libglx-mesa0 on Ubuntu noble (ubuntu-latest),
+          # where the concrete names the rig was calibrated with do not
+          # exist.
           sudo apt-get install -y --no-install-recommends \
-            libegl1-mesa libgl1-mesa-dri libglx-mesa0 mesa-utils \
+            libegl1 libgl1-mesa-dri libglx0 mesa-utils \
             sway grim imagemagick x11-utils libinput10 libxkbcommon0 \
             fonts-dejavu-core
       - name: Build
