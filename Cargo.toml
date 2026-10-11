@@ -40,6 +40,7 @@ directories = "5.0"
 freedesktop-desktop-entry = "0.5"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 open = "5.0"
+resvg = { version = "0.48", default-features = false, features = ["svgz"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Reads on-screen keyboard visibility from the desktop (KWin, squeekboard)
