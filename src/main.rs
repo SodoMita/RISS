@@ -8,12 +8,15 @@ mod android_app_entry;
 mod app_entry;
 
 mod history;
+mod kiss;
 #[cfg(not(target_os = "android"))]
 mod package_managers;
 mod providers;
 mod search;
 mod settings;
 mod storage;
+#[cfg(test)]
+mod tests;
 mod ui;
 
 #[cfg(not(target_os = "android"))]

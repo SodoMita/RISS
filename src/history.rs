@@ -25,6 +25,13 @@ pub struct HistoryData {
     pub search_history: Vec<String>,
     /// Previously executed commands
     pub exec_history: Vec<String>,
+    /// Which app was launched for which query, most recent first.
+    ///
+    /// RISS's stand-in for KISS's `history` table `query` column, which is
+    /// what `DBHelper.getHistory(context, limit, mode, currentQuery)` filters
+    /// on to build `QuerySearcher.knownIds`. Without it the per-query boost
+    /// in `QuerySearcher.addResults` has nothing to look up.
+    pub query_launches: HashMap<String, Vec<String>>,
 }
 
 /// Maximum number of remembered searches / commands.
@@ -92,18 +99,57 @@ impl HistoryData {
         self.last_launched.insert(exec.to_string(), now);
     }
 
+    /// Remember that `exec` was launched for `query` (KISS inserts the query
+    /// alongside the record in the `history` table).
+    ///
+    /// Most-recent-first, de-duplicated, capped like every other history list
+    /// here.
+    pub fn record_launch_for_query(&mut self, query: &str, exec: &str) {
+        let key = query.trim().to_lowercase();
+        if key.is_empty() {
+            return;
+        }
+        let entries = self.query_launches.entry(key).or_default();
+        entries.retain(|item| item != exec);
+        entries.insert(0, exec.to_string());
+        entries.truncate(MAX_HISTORY_ITEMS);
+    }
+
+    /// `DBHelper.getHistory(context, limit, historyMode, currentQuery)` as
+    /// `QuerySearcher` consumes it: the records previously chosen for this
+    /// query, each with `readCursor`'s relevance (`count - position`, so the
+    /// best record carries `count` and the worst carries 1).
+    pub fn known_ids_for_query(&self, query: &str, limit: usize) -> Vec<(String, i32)> {
+        let key = query.trim().to_lowercase();
+        let Some(entries) = self.query_launches.get(&key) else {
+            return Vec::new();
+        };
+        let count = entries.len().min(limit);
+        entries
+            .iter()
+            .take(count)
+            .enumerate()
+            .map(|(position, record)| (record.clone(), (count - position) as i32))
+            .collect()
+    }
+
     /// Forget usage statistics for one app (KISS' "reset rank"), keeping
     /// favorites, tags and renames intact.
     pub fn reset_rank(&mut self, exec: &str) {
         self.launch_counts.remove(exec);
         self.last_launched.remove(exec);
         self.shortcuts.retain(|_, value| value != exec);
+        for entries in self.query_launches.values_mut() {
+            entries.retain(|item| item != exec);
+        }
+        self.query_launches.retain(|_, entries| !entries.is_empty());
     }
 
     /// Clear usage history while preserving favorites and tags.
     pub fn clear_history(&mut self) {
         self.launch_counts.clear();
         self.last_launched.clear();
+        self.query_launches.clear();
     }
 
     /// Add or remove `exec` from the favorites bar. Returns the new state:

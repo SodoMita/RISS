@@ -2,10 +2,7 @@
 use crate::android_app_entry::AppEntry;
 #[cfg(not(target_os = "android"))]
 use crate::app_entry::AppEntry;
-use fuzzy_matcher::skim::SkimMatcherV2;
-use fuzzy_matcher::FuzzyMatcher;
 use std::collections::HashMap;
-
 /// Result of a search with relevance score
 #[derive(Debug, Clone)]
 pub struct SearchResult {
@@ -58,215 +55,24 @@ pub enum ResultAction {
     Excluded { exec: String },
 }
 
-/// Search engine for apps
-pub struct SearchEngine {
-    matcher: SkimMatcherV2,
-}
-
-/// Case-insensitive `starts_with` that allocates only when the text is not
-/// ASCII. `str::to_lowercase` is not the same function as ASCII folding for
-/// non-ASCII input ("\u{130}" lowercases to two chars), so the Unicode path is kept
-/// for exactly the inputs where it matters and buffered for the ones where it
-/// does not.
-fn starts_with_ignore_case(hay: &str, needle: &str, buf: &mut String) -> bool {
-    if hay.is_ascii() && needle.is_ascii() {
-        hay.get(..needle.len())
-            .is_some_and(|head| head.eq_ignore_ascii_case(needle))
-    } else {
-        lower_into(hay, buf);
-        buf.starts_with(needle)
-    }
-}
-
-fn eq_ignore_case(hay: &str, needle: &str, buf: &mut String) -> bool {
-    if hay.is_ascii() && needle.is_ascii() {
-        hay.len() == needle.len() && hay.as_bytes().eq_ignore_ascii_case(needle.as_bytes())
-    } else {
-        lower_into(hay, buf);
-        *buf == *needle
-    }
-}
-
-/// `s.to_lowercase()` without the allocation, reusing `buf`'s capacity.
-fn lower_into(s: &str, buf: &mut String) {
-    buf.clear();
-    buf.reserve(s.len());
-    buf.extend(s.chars().flat_map(char::to_lowercase));
-}
-
-/// `display_name` without the `String` it builds: every candidate in a search
-/// used to pay a clone of its name (or alias) per keystroke.
-fn display_name_ref<'a>(app: &'a AppEntry, aliases: &'a HashMap<String, String>) -> &'a str {
-    match aliases.get(&app.exec) {
-        Some(alias) => alias.as_str(),
-        None => app.name.as_str(),
-    }
-}
-
-/// `searchable_text(app, aliases)` written into a caller-owned buffer.
-fn write_searchable_text(app: &AppEntry, aliases: &HashMap<String, String>, out: &mut String) {
-    // The buffer is reused across candidates, so it has to be emptied first:
-    // appending instead would let candidate N+1 fuzzy-match against the text of
-    // candidates 0..=N.
-    out.clear();
-    if let Some(alias) = aliases.get(&app.exec) {
-        out.push_str(alias);
-        out.push(' ');
-    }
-    out.push_str(&app.name);
-    if !app.comment.is_empty() {
-        out.push(' ');
-        out.push_str(&app.comment);
-    }
-    for tag in &app.tags {
-        out.push(' ');
-        out.push_str(tag);
-    }
-    for cat in &app.categories {
-        out.push(' ');
-        out.push_str(cat);
-    }
-}
-
-/// Display-name tie-break for equal scores, allocation-free on ASCII.
-fn cmp_display_name(
-    a: &AppEntry,
-    b: &AppEntry,
-    aliases: &HashMap<String, String>,
-    scratch: &mut String,
-) -> std::cmp::Ordering {
-    let x = display_name_ref(a, aliases);
-    let y = display_name_ref(b, aliases);
-    if x.is_ascii() && y.is_ascii() {
-        x.bytes()
-            .map(|c| c.to_ascii_lowercase())
-            .cmp(y.bytes().map(|c| c.to_ascii_lowercase()))
-    } else {
-        let _ = scratch;
-        x.to_lowercase().cmp(&y.to_lowercase())
-    }
-}
+/// Ranking for the no-query default list.
+///
+/// The *query* search path does not live here any more: it is
+/// [`crate::kiss::searcher`], a port of KISS's `AppProvider.requestResults` +
+/// `QuerySearcher` + `Searcher.onPostExecute`, and it runs on the search
+/// worker thread. What is left in this file is the synthetic provider rows
+/// and the default (empty-query) list, neither of which is part of the
+/// application-search path.
+pub struct SearchEngine;
 
 impl SearchEngine {
     pub fn new() -> Self {
-        Self {
-            matcher: SkimMatcherV2::default().smart_case(),
-        }
-    }
-
-    /// Search through apps with the given query
-    pub fn search(
-        &self,
-        query: &str,
-        apps: &[AppEntry],
-        aliases: &HashMap<String, String>,
-        max_results: usize,
-    ) -> Vec<SearchResult> {
-        let query = query.trim();
-
-        if query.is_empty() {
-            return Vec::new();
-        }
-
-        let query_lower = query.to_lowercase();
-
-        // Candidates are ranked as (score, kind, index) over the borrowed pool
-        // and cloned only after truncation: a two-character query matched most
-        // of the app list, so the old code deep-cloned every AppEntry -- six
-        // heap allocations each -- to throw all but `max_results` away, and the
-        // comparator then built two more lowercased strings per comparison
-        // (issue #37, "allocations in hot loops").
-        let mut scored: Vec<(i64, MatchType, usize)> = Vec::new();
-        let mut name_buf = String::new();
-        let mut text_buf = String::new();
-
-        for (idx, app) in apps.iter().enumerate() {
-            let name = display_name_ref(app, aliases);
-            let boost = usage_boost(app);
-            let mut hit: Option<(i64, MatchType)> = None;
-
-            // Exact match on name.
-            if eq_ignore_case(name, &query_lower, &mut name_buf) {
-                hit = Some((10000 + boost, MatchType::Exact));
-            }
-            // Prefix match on name.
-            if hit.is_none() && starts_with_ignore_case(name, &query_lower, &mut name_buf) {
-                let len = if name.is_ascii() {
-                    name.len()
-                } else {
-                    lower_into(name, &mut name_buf);
-                    name_buf.len()
-                };
-                hit = Some((5000 + (100 - len as i64) + boost, MatchType::Prefix));
-            }
-            // Word match inside the name ("fire" matching "Firefox Nightly").
-            if hit.is_none() {
-                let words = if name.is_ascii() {
-                    name.split_whitespace()
-                        .any(|w| starts_with_ignore_case(w, &query_lower, &mut name_buf))
-                } else {
-                    lower_into(name, &mut name_buf);
-                    name_buf
-                        .split_whitespace()
-                        .any(|w| w.starts_with(&query_lower))
-                };
-                if words {
-                    hit = Some((4000 + boost, MatchType::Prefix));
-                }
-            }
-            // Tag match.
-            if hit.is_none() {
-                for tag in &app.tags {
-                    if starts_with_ignore_case(tag, &query_lower, &mut name_buf) {
-                        hit = Some((3000 + boost, MatchType::Tag));
-                        break;
-                    }
-                }
-            }
-            // Category match.
-            if hit.is_none() {
-                for cat in &app.categories {
-                    if starts_with_ignore_case(cat, &query_lower, &mut name_buf) {
-                        hit = Some((2000 + boost, MatchType::Category));
-                        break;
-                    }
-                }
-            }
-            // Fuzzy match on the searchable blob, built only for candidates
-            // that nothing cheaper decided about.
-            if hit.is_none() {
-                write_searchable_text(app, aliases, &mut text_buf);
-                if let Some(fuzzy) = self.matcher.fuzzy_match(&text_buf, query) {
-                    hit = Some((fuzzy + boost, MatchType::Fuzzy));
-                }
-            }
-
-            if let Some((score, match_type)) = hit {
-                scored.push((score, match_type, idx));
-            }
-        }
-
-        // Sort by score descending, then by name so the order is stable.
-        scored.sort_by(|a, b| {
-            b.0.cmp(&a.0)
-                .then_with(|| cmp_display_name(&apps[a.2], &apps[b.2], aliases, &mut name_buf))
-        });
-        scored.truncate(max_results);
-        let results: Vec<SearchResult> = scored
-            .into_iter()
-            .map(|(score, match_type, idx)| SearchResult {
-                entry: apps[idx].clone(),
-                score,
-                match_type,
-                action: ResultAction::Launch,
-            })
-            .collect();
-        results
+        Self
     }
 
     /// Get default apps to show when no search query (favorites + most used)
     pub fn get_default_apps(&self, apps: &[AppEntry], max_results: usize) -> Vec<SearchResult> {
-        // Ranked by index, cloned after truncation, as in `search`.
+        // Ranked by index, cloned after truncation.
         let mut scored: Vec<(i64, MatchType, usize)> = Vec::new();
         for (idx, app) in apps.iter().enumerate() {
             if !(app.is_favorite || app.launch_count > 0) {
@@ -298,10 +104,10 @@ impl SearchEngine {
     }
 }
 
-/// Usage boost shared by every match type (issue #21): frequently launched
-/// apps rank higher regardless of how they matched, like KISS.
-fn usage_boost(app: &AppEntry) -> i64 {
-    app.launch_count as i64 * 10
+impl Default for SearchEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// The name shown for an app, honoring the user's rename (KISS alias).
@@ -310,16 +116,6 @@ pub fn display_name(app: &AppEntry, aliases: &HashMap<String, String>) -> String
         Some(alias) => alias.clone(),
         None => app.name.clone(),
     }
-}
-
-/// Searchable text, including any rename the user gave the app.
-fn searchable_text(app: &AppEntry, aliases: &HashMap<String, String>) -> String {
-    let mut text = app.searchable_text();
-    if let Some(alias) = aliases.get(&app.exec) {
-        text.insert(0, ' ');
-        text.insert_str(0, alias);
-    }
-    text
 }
 
 // --- Synthetic results used by the optional providers ---------------------
@@ -583,50 +379,30 @@ mod tests {
         assert_eq!(timer_result(95).entry.name, "Wait 1m 35s");
     }
 
+    /// Issue #21's "learn from every match type" boost is **gone**, along
+    /// with the `Exact`/`Prefix`/`Tag`/`Category` ladder it rode on.
+    ///
+    /// KISS has no such ladder: `AppProvider.requestResults` produces one
+    /// `FuzzyScoreV2` score for the name, one for the tags, keeps the larger,
+    /// and the only history influence is `QuerySearcher`'s per-query
+    /// `knownIds` boost. A lifetime launch counter that lifts an app for
+    /// *every* query is an RISS invention, and inventions are what this port
+    /// removes. The behaviour now lives in `crate::kiss::searcher` and is
+    /// tested there and through the live path in `crate::tests::live_search`.
     #[test]
-    fn ranking_learns_from_usage_across_match_types() {
+    fn the_old_match_type_ladder_is_no_longer_a_search_path() {
+        // The type still exists because provider rows are tagged with it,
+        // but nothing scores apps with it any more: `SearchEngine` has no
+        // `search` method at all.
         let engine = SearchEngine::new();
-        let aliases = HashMap::new();
-
-        // Prefix matches: the used app wins (issue #21).
+        let fresh = AppEntry::virtual_entry("Fire Tools", "utils", "fire-tools");
         let mut used = AppEntry::virtual_entry("Firefox", "browser", "firefox");
         used.launch_count = 50;
-        let fresh = AppEntry::virtual_entry("Fire Tools", "utils", "fire-tools");
-        let results = engine.search("fire", &[fresh, used], &aliases, 10);
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].entry.exec, "firefox");
-        assert_eq!(results[0].match_type, MatchType::Prefix);
-
-        // Exact matches learn too.
-        let mut used_exact = AppEntry::virtual_entry("Terminal", "shell", "term-used");
-        used_exact.launch_count = 30;
-        let fresh_exact = AppEntry::virtual_entry("terminal", "shell", "term-fresh");
-        let results = engine.search("terminal", &[fresh_exact, used_exact], &aliases, 10);
-        assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|r| r.match_type == MatchType::Exact));
-        assert_eq!(results[0].entry.exec, "term-used");
-
-        // Tag matches learn too.
-        let mut tagged_used = AppEntry::virtual_entry("Alpha", "a", "alpha");
-        tagged_used.tags = vec!["music".to_string()];
-        tagged_used.launch_count = 20;
-        let mut tagged_fresh = AppEntry::virtual_entry("Beta", "b", "beta");
-        tagged_fresh.tags = vec!["music".to_string()];
-        let results = engine.search("mus", &[tagged_fresh, tagged_used], &aliases, 10);
-        assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|r| r.match_type == MatchType::Tag));
-        assert_eq!(results[0].entry.exec, "alpha");
-
-        // Category matches learn too.
-        let mut cat_used = AppEntry::virtual_entry("Gamma", "g", "gamma");
-        cat_used.categories = vec!["Office".to_string()];
-        cat_used.launch_count = 20;
-        let mut cat_fresh = AppEntry::virtual_entry("Delta", "d", "delta");
-        cat_fresh.categories = vec!["Office".to_string()];
-        let results = engine.search("off", &[cat_fresh, cat_used], &aliases, 10);
-        assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|r| r.match_type == MatchType::Category));
-        assert_eq!(results[0].entry.exec, "gamma");
+        // The only list `SearchEngine` still builds is the empty-query one,
+        // which is not the application-search path.
+        let default = engine.get_default_apps(&[fresh, used], 10);
+        assert_eq!(default.len(), 1, "only launched/favourite apps are listed");
+        assert_eq!(default[0].entry.exec, "firefox");
     }
 
     #[test]

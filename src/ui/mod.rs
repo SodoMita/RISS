@@ -3,10 +3,15 @@ use crate::android_app_entry::{self as app_entry, AppEntry};
 #[cfg(not(target_os = "android"))]
 use crate::app_entry::{self, AppEntry};
 use crate::history::{HistoryData, HistoryMode};
+use crate::kiss::index::AppIndex;
+use crate::kiss::prefs;
+use crate::kiss::searcher::{SearchParams, Searcher as KissSearcher};
+use crate::kiss::worker::{AppLoader, SearchWorker};
 use crate::search::{self, MatchType, ResultAction, ResultView, SearchEngine, SearchResult};
 use crate::settings::SettingsData;
 use eframe::egui::{self, RichText};
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 mod colors;
@@ -26,6 +31,23 @@ use colors::Palette;
 use favorites::FavDrag;
 use icons::IconCache;
 use window_mode::WindowMode;
+
+/// The blocking half of a reload, run on the provider-loading worker thread.
+///
+/// KISS's `AppProvider` loads on an `AsyncTask` and is re-triggered by
+/// `LauncherApps.Callback`; nothing about it happens on the UI thread.
+fn load_app_entries() -> Vec<AppEntry> {
+    let mut apps = app_entry::discover_apps();
+    for builtin in app_entry::builtin_entries() {
+        if !apps
+            .iter()
+            .any(|a| a.name.eq_ignore_ascii_case(&builtin.name))
+        {
+            apps.push(builtin);
+        }
+    }
+    apps
+}
 
 /// A result row asked to activate while `results` was borrowed for painting.
 enum Deferred {
@@ -52,6 +74,27 @@ pub struct RissApp {
     apps: Vec<AppEntry>,
     results: Vec<SearchResult>,
     search_engine: SearchEngine,
+    /// The loaded application data the live search runs over: every entry
+    /// carries its own `StringNormalizer.Result`, normalized once here and
+    /// never per keystroke. Shared with the search worker behind an `Arc`.
+    index: Arc<AppIndex>,
+    /// Bumped on every index rebuild so a result computed against the old
+    /// snapshot can be recognised and dropped.
+    data_generation: u64,
+    /// KISS's `Searcher.SEARCH_THREAD`: one persistent serial executor.
+    search_worker: SearchWorker,
+    /// The provider-loading worker. Scanning `.desktop` files / crossing JNI
+    /// never happens inside a frame.
+    app_loader: AppLoader<Vec<AppEntry>>,
+    /// Generation of the search whose outcome we are willing to paint.
+    /// Anything else is stale and is thrown away.
+    expected_search_generation: u64,
+    /// A UI-thread searcher for the modal favourites picker, so there is one
+    /// scoring dialect in the process and not two.
+    picker_searcher: KissSearcher,
+    /// `QuerySearcher.MAX_RESULT_COUNT`, cached exactly like upstream caches
+    /// it, and cleared by `clearMaxResultCountCache()` when settings change.
+    max_result_count: Option<usize>,
     history: HistoryData,
     settings: SettingsData,
     icons: IconCache,
@@ -121,6 +164,19 @@ impl RissApp {
             apps: Vec::new(),
             results: Vec::new(),
             search_engine: SearchEngine::new(),
+            index: Arc::new(AppIndex::new(0)),
+            data_generation: 0,
+            search_worker: {
+                let ctx = cc.egui_ctx.clone();
+                SearchWorker::new(move || ctx.request_repaint())
+            },
+            app_loader: {
+                let ctx = cc.egui_ctx.clone();
+                AppLoader::new(load_app_entries, move || ctx.request_repaint())
+            },
+            expected_search_generation: 0,
+            picker_searcher: KissSearcher::new(),
+            max_result_count: None,
             history,
             settings,
             icons: IconCache::default(),
@@ -163,16 +219,18 @@ impl RissApp {
         app
     }
 
+    /// Ask the provider-loading worker for a fresh app list.
+    ///
+    /// Non-blocking by construction: scanning `.desktop` files (Linux) or
+    /// crossing JNI into `LauncherApps` (Android) must never run inside an
+    /// egui frame. The answer is picked up in [`Self::poll_workers`].
     fn reload_apps(&mut self) {
-        let mut apps = app_entry::discover_apps();
-        for builtin in app_entry::builtin_entries() {
-            if !apps
-                .iter()
-                .any(|a| a.name.eq_ignore_ascii_case(&builtin.name))
-            {
-                apps.push(builtin);
-            }
-        }
+        self.app_loader.request();
+    }
+
+    /// `AppProvider`'s loader finishing: stamp the user's data onto the
+    /// entries, then rebuild the search index.
+    fn apply_loaded_apps(&mut self, mut apps: Vec<AppEntry>) {
         for app in &mut apps {
             app.launch_count = self.history.get_launch_count(&app.exec);
             app.last_launched = self.history.get_last_launched(&app.exec);
@@ -181,6 +239,8 @@ impl RissApp {
             if !custom.is_empty() {
                 app.tags = custom;
             }
+            // KISS's alias is applied through `Pojo.setName`, so the
+            // normalized name is built from the name the user sees.
             if let Some(alias) = self.history.alias(&app.exec) {
                 app.name = alias.clone();
             }
@@ -189,8 +249,19 @@ impl RissApp {
             }
         }
         self.all_apps = apps;
+        self.rebuild_index();
+    }
+
+    /// Recompute the exclusion-filtered list and the normalized search index
+    /// from `all_apps`, without touching the filesystem.
+    ///
+    /// Bumping `data_generation` is what makes a reload racing a search safe:
+    /// an outcome computed against the previous snapshot is refused rather
+    /// than painted against positions that have moved.
+    fn rebuild_index(&mut self) {
         // Excluded apps disappear from the normal lists; the "Search excluded
-        // apps" toggle decides whether typed queries can still find them.
+        // apps" preference decides whether typed queries can still find them,
+        // which is `AppProvider.requestResults`' `enable-excluded-apps` test.
         let excluded: Vec<String> = self
             .settings
             .value("edit-excluded-apps")
@@ -199,45 +270,159 @@ impl RissApp {
             .filter(|s| !s.is_empty())
             .map(str::to_lowercase)
             .collect();
+        let is_excluded = |a: &AppEntry| {
+            excluded
+                .iter()
+                .any(|x| a.exec.eq_ignore_ascii_case(x) || a.name.eq_ignore_ascii_case(x))
+        };
         self.apps = self
             .all_apps
             .iter()
-            .filter(|a| {
-                !excluded
-                    .iter()
-                    .any(|x| a.exec.eq_ignore_ascii_case(x) || a.name.eq_ignore_ascii_case(x))
-            })
+            .filter(|a| !is_excluded(a))
             .cloned()
             .collect();
+        self.data_generation = self.data_generation.wrapping_add(1);
+        self.index = Arc::new(AppIndex::build(
+            self.data_generation,
+            self.all_apps.clone(),
+            is_excluded,
+            // `AppPojo.disabled` comes from `LauncherApps` on Android and has
+            // no source on either RISS platform yet, so no entry is disabled.
+            // The penalty itself is ported and tested; this is the input that
+            // is missing, and it is listed as a gap rather than faked.
+            |_| false,
+        ));
         self.update_results();
     }
 
+    /// `QuerySearcher.getMaxResultCount()`, cached as upstream caches it in
+    /// its `MAX_RESULT_COUNT` static.
+    fn max_result_count(&mut self) -> usize {
+        if let Some(cached) = self.max_result_count {
+            return cached;
+        }
+        let raw = self
+            .settings
+            .value("number-of-display-elements")
+            .to_string();
+        let value = prefs::max_result_count_usize(Some(&raw));
+        self.max_result_count = Some(value);
+        value
+    }
+
+    /// `QuerySearcher.clearMaxResultCountCache()`.
+    pub(crate) fn clear_max_result_count_cache(&mut self) {
+        self.max_result_count = None;
+    }
+
+    /// A setting that the search path reads has changed: drop the cached
+    /// max-result count and re-run the current query.
+    fn invalidate_search_cache(&mut self) {
+        self.clear_max_result_count_cache();
+        self.update_results();
+    }
+
+    /// Everything one search needs, resolved on the UI thread and then handed
+    /// to the worker by value. The worker never reads app state, so the UI
+    /// holds no lock while a search runs.
+    fn search_params(&mut self) -> SearchParams {
+        let max_results = self.max_result_count();
+        let query = self.query.trim().to_string();
+        let history_mode = prefs::HistoryMode::value_by_id(self.settings.value("history-mode"));
+        // `DataHandler.getExcludedFavorites()`.
+        let excluded_favorite_ids = if self.settings.enabled("exclude-favorites-apps") {
+            self.history.favorites.clone()
+        } else {
+            Vec::new()
+        };
+        let known_ids = if self.settings.enabled("enable-app-history") {
+            self.history.known_ids_for_query(&query, max_results)
+        } else {
+            Vec::new()
+        };
+        SearchParams {
+            query,
+            max_results,
+            history_mode,
+            enable_excluded_apps: self.settings.enabled("enable-excluded-apps"),
+            known_ids,
+            excluded_favorite_ids,
+        }
+    }
+
+    /// Hand the current query to the search worker. The previous results stay
+    /// on screen until the answer arrives, exactly as KISS's adapter keeps its
+    /// rows until `onPostExecute`.
+    fn submit_search(&mut self) {
+        let params = self.search_params();
+        self.expected_search_generation =
+            self.search_worker.submit(params, Arc::clone(&self.index));
+    }
+
+    /// Drain the two workers. Called once per frame, before anything is
+    /// painted; neither call blocks.
+    fn poll_workers(&mut self) {
+        if let Some(loaded) = self.app_loader.poll() {
+            self.apply_loaded_apps(loaded.entries);
+        }
+        if let Some(outcome) = self.search_worker.poll(self.data_generation) {
+            // Stale-result guard: only the generation we are still waiting
+            // for may be painted.
+            if outcome.generation == self.expected_search_generation {
+                self.apply_search_outcome(&outcome.hits);
+            }
+        }
+    }
+
+    /// `Searcher.onPostExecute` -> `adapter.updateWithPojos`.
+    fn apply_search_outcome(&mut self, hits: &[crate::kiss::searcher::Scored]) {
+        let query = self.query.trim().to_string();
+        self.results.clear();
+        self.results.reserve(hits.len());
+        for hit in hits {
+            let Some(item) = self.index.get(hit.index) else {
+                continue;
+            };
+            self.results.push(SearchResult {
+                entry: item.entry.clone(),
+                score: hit.relevance as i64,
+                match_type: MatchType::Fuzzy,
+                action: ResultAction::Launch,
+            });
+        }
+        // RISS's own provider rows (web search, timers, settings, ...) are
+        // appended below the application matches. That layout predates this
+        // port and is left alone.
+        let app_matches = self.results.len();
+        let extra = self.provider_results(&query, app_matches);
+        self.results.extend(extra);
+        self.list_generation = self.list_generation.wrapping_add(1);
+        if self.selected_index >= self.results.len() {
+            self.selected_index = 0;
+        }
+    }
+
+    /// Rebuild the displayed list.
+    ///
+    /// For a non-empty query this only *queues* the search: the KISS path
+    /// runs on the search worker and the answer arrives through
+    /// [`Self::poll_workers`]. The UI never waits for it.
+    ///
+    /// The empty-query branches below are the no-query lists (upstream's
+    /// `HistorySearcher` / `ApplicationsSearcher` territory) and are outside
+    /// the application-search path this port replaces; they are untouched
+    /// apart from cancelling any search still in flight.
     fn update_results(&mut self) {
         self.list_generation = self.list_generation.wrapping_add(1);
-        let limit = self.settings.number("number-of-display-elements", 20);
         if !self.query.trim().is_empty() {
-            // "Search excluded apps" lets typed queries find excluded apps;
-            // they never appear in the normal lists either way.
-            let query = self.query.trim().to_string();
-            let max = if limit == 0 { usize::MAX } else { limit };
-            self.results = {
-                let pool = if self.settings.enabled("enable-excluded-apps") {
-                    &self.all_apps
-                } else {
-                    &self.apps
-                };
-                self.search_engine
-                    .search(&query, pool, &self.history.aliases, max)
-            };
-            if self.settings.enabled("exclude-favorites-apps") {
-                self.results.retain(|r| !r.entry.is_favorite);
-            }
-            // Providers append their rows below the application matches,
-            // exactly like KISS (web search always goes last).
-            let app_matches = self.results.len();
-            let extra = self.provider_results(&query, app_matches);
-            self.results.extend(extra);
-        } else if self.show_hidden {
+            self.submit_search();
+            return;
+        }
+        // Leaving query mode supersedes anything in flight, so a late answer
+        // cannot overwrite the list we are about to build.
+        self.expected_search_generation = u64::MAX;
+        let limit = self.settings.number("number-of-display-elements", 20);
+        if self.show_hidden {
             // The hidden-apps list: activating a row restores it (KISS has no
             // such screen; pr-3 called it "Excluded").
             self.results = self
@@ -283,9 +468,6 @@ impl RissApp {
             .min(self.results.len().saturating_sub(1));
     }
 
-    /// Results contributed by the optional providers: shortcuts, settings,
-    /// excluded apps, timer, previous searches, web search, shell commands and
-    /// special lists. Mirrors the KISS provider stack.
     fn provider_results(&self, query: &str, app_matches: usize) -> Vec<SearchResult> {
         let mut results: Vec<SearchResult> = Vec::new();
         let query_lower = query.to_lowercase();
@@ -592,6 +774,8 @@ impl RissApp {
                     && !self.is_excluded_from_history(&entry)
                 {
                     self.history.record_launch(exec);
+                    // The `query` column `QuerySearcher.knownIds` reads back.
+                    self.history.record_launch_for_query(&self.query, exec);
                     self.save_history();
                 }
                 self.query.clear();
@@ -855,6 +1039,9 @@ impl RissApp {
 
 impl eframe::App for RissApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Worker answers first, before anything is laid out: the frame paints
+        // a cached list, it never searches or loads.
+        self.poll_workers();
         let p = Palette::from_settings(&self.settings);
         self.apply_visuals(ctx, p);
         self.icons.begin_frame();
@@ -956,6 +1143,32 @@ pub fn setup_fonts(ctx: &egui::Context) {
         }
     }
     ctx.set_fonts(fonts);
+}
+
+impl RissApp {
+    /// Run the ported KISS search synchronously on the calling thread.
+    ///
+    /// Used by the modal favourites picker, which is not the live launcher
+    /// path. It deliberately shares [`crate::kiss::searcher::Searcher`] with
+    /// the worker so the two can never disagree about scoring or ordering.
+    pub(crate) fn search_apps_now(&mut self, query: &str, max_results: usize) -> Vec<SearchResult> {
+        let mut params = self.search_params();
+        params.query = query.trim().to_string();
+        params.max_results = max_results;
+        let index = Arc::clone(&self.index);
+        let Some(hits) = self.picker_searcher.search(&params, &index, || false) else {
+            return Vec::new();
+        };
+        hits.iter()
+            .filter_map(|hit| index.get(hit.index))
+            .map(|item| SearchResult {
+                entry: item.entry.clone(),
+                score: 0,
+                match_type: MatchType::Fuzzy,
+                action: ResultAction::Launch,
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
