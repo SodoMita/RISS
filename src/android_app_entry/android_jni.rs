@@ -15,7 +15,11 @@ use crate::ui::insets::WindowGeometry;
 /// Global storage for the AndroidApp reference
 static ANDROID_APP: OnceCell<Mutex<AndroidApp>> = OnceCell::new();
 
-/// Store the AndroidApp for later use
+/// Store the AndroidApp for later use.
+///
+/// Set once per process: `android_main` restarts the process instead of
+/// running a second Activity instance in it, so the stored app is always
+/// the live Activity's and never a destroyed one.
 pub fn set_android_app(app: AndroidApp) {
     let _ = ANDROID_APP.set(Mutex::new(app));
     info!("AndroidApp stored successfully");
