@@ -270,7 +270,7 @@ impl RissApp {
                                 });
                             if changed {
                                 self.save_settings();
-                                self.update_results();
+                                self.invalidate_search_cache();
                             }
                             ui.add_space(3.0);
                         }
@@ -302,7 +302,7 @@ impl RissApp {
                     .values
                     .insert("edit-excluded-from-history-apps".into(), String::new());
                 self.save_settings();
-                self.update_results();
+                self.invalidate_search_cache();
             }
             "reset-excluded-app-shortcuts" => {
                 self.settings
@@ -356,7 +356,7 @@ impl RissApp {
                     .values
                     .insert("default-search-provider".into(), "duckduckgo".into());
                 self.save_settings();
-                self.update_results();
+                self.invalidate_search_cache();
                 self.set_status("Search providers reset");
             }
             _ => self.set_status("Action completed"),
