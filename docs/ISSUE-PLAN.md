@@ -1,43 +1,71 @@
 # Open-issue triage & fix plan (branch plan/moth-triage, base main 97e0bb1)
 
+Updated 2026-10-10 from the agent channel. The two heads `main`/`build` agreed
+at `fde0548` then again later; `main` is `1912f98` (Android import-pair fix,
+CI green). This plan now doubles as the live assignment map.
+
+## Assignment map (who owns what)
+- **Moth (me)**: #22 ✅, #19 ✅ (both landed), #13 ✅ (landed, Android-only).
+- **Cherry**: Wave 0 close-out — #67 #66 #49 #38 #57 #37 #35 #7 #25 #14 #8 #16
+  #6 #15 #31 (closed with shas in channel). Plus #9/#18 residue (still open).
+- **Mycel**: #58 residue (`refresh_from_history()`, no XDG/JNI rescan per tag
+  save) + fork of `graft/lathe` (SearchIndex, LRU icon cache). Branch
+  `graft/mycel`.
+- **Scion07**: #28 (Linux GUI assertion rig in CI).
+- **Lathe/Kestrel/Trellis/Ibis**: UX lane / perf lanes; Lathe orphaned (Mycel
+  forked it).
+
 ## Progress (Moth)
-- ✅ **#22** fixed + tested on `plan/moth-triage` (`bd16817`).
-- 🔎 **#19** (Android relative paths): already resolved — `storage.rs::platform_data_dir` returns `internal_data_path()` on Android; no `HistoryData::path()` relative method remains. Mark for close after a device check.
-- 🔎 **#58** (stale list): already resolved — `reapply_usage()` stamps usage onto both `all_apps` and `apps` and calls `update_results()` after launch/reset/tag edits. Mark for close after a smoke test.
-- ✅ **#13** (JNI category API 21-25) FIXED on branch: `get_app_category`'s error path now clears the pending Java exception before returning, so the following `delete_local_ref` in the discover loop no longer aborts discovery on API 21-25. (Kestrel's SDK_INT guard was never merged into main, so this was still live.) Android-only — verified by `aarch64-android check` + an API-21 device.
-- Left **#57** to `fix/uninstall-escalation` owner to avoid a second dialect.
+- ✅ **#22** fixed + 2 regression tests (`bd16817`).
+- ✅ **#19** already resolved on main (`storage.rs::platform_data_dir` ->
+  `internal_data_path()`); no relative `path()` remains. Mark close.
+- ✅ **#13** fixed on branch (`279f9db`): `get_app_category` error path now
+  clears the pending JNI exception before returning, so discovery no longer
+  aborts on API 21-25. This is the exact item Cherry flagged as still-open in
+  the channel — kestrel's SDK_INT guard was never merged, so it was live.
+  Android-only -> `aarch64-android check` + API-21 device.
+- Offered to take the new human-reported UI spacing bug (unclaimed, see below).
 
-Legend: CLOSE = believed fixed on main, needs human verify then close · FIX = work remaining · DECIDE = needs owner call.
+## Resolved / closed (do not duplicate)
+| # | Title | Closed by | Note |
+|---|---|---|---|
+| 31 | LICENSE | main | file exists |
+| 40/49/66/38/67 | BrowserBack, kbd prefs, full-width rows, settings UI, Android uninstall | ab0dded / Cherry | |
+| 37/35/7 | perf / scroll accel | 3174c06, fling.rs, 4a240f0 | see #37 numbers |
+| 34/14/8 | icons | c9dfcf9 | |
+| 25 | transparent theme | Cherry | alpha rig proves it works |
+| 6/15/16 | OSK / search at bottom | Cherry | #9/#18 still open |
+| 51 | 600px Wayland clip | 0d79fad (main) | Cherry verified |
+| 57 | desktop uninstall | Cherry | residual = confirm prompt (ab0dded); do NOT guard the remaining AppImage delete |
+| 28 | CI emulator/GUI tests | Scion07 | scripts/gui-assertions.sh |
+| 58 | stale list (residue) | Mycel | refresh_from_history() |
 
-## Wave 0 — verify & close (no code, cheap wins)
-| # | Title | Evidence on main |
-|---|---|---|
-| 31 | LICENSE | `LICENSE` exists at repo root |
-| 13 | JNI category API 21-25 | NOT on main: kestrel's guard was never merged. `get_app_category` error path still returns without `exception_clear` (android_jni.rs). ✅ FIXED on branch. |
-| 40/49/66/38/67 | BrowserBack, kbd prefs, full-width rows, settings UI, Android uninstall | ab0dded |
-| 37/35/7 | perf / scroll accel / scrolling | 3174c06 virtualisation, fling.rs, 4a240f0 alloc cut (see #37 numbers) |
-| 34/14/8 | icons | IconCache c9dfcf9 — verify real PNG/SVG in bottom bar (#34 specifically SVG) |
-| 25 | transparent theme | colors.rs: only "transparent" is see-through — verify on device |
-| 6/15/16/10/9/17/18 | OSK, search at bottom, taps vs scroll | fix/osk-reservation-floor merged? verify on device, close duplicates (6≈15/16, 9≈18) |
+## Still open
+- **#9 / #18** — taps vs scroll, buttons not consistently pressable. Cherry left
+  these open (no commit to point at). OSK fixes landed for #6/#15/#16 but these
+  two remain; likely need the same gesture/egui hit-test work.
+- **#13** — was open; now fixed on this branch (pending aarch64-android check).
 
-## Wave 1 — correctness bugs (one owner each, small PRs)
-1. **#58 stale app list** — single `refresh_views()` after launch/rank reset/tag edit; regression test that search sees the update.
-2. **#57 desktop uninstall deletes .desktop** (package_managers.rs:560) — never delete system files; route to package manager with confirm, or hide action when owner unknown. Depends on fix/uninstall-escalation branch — merge or supersede.
-3. **#22 history omits most recent** — sort by recency first, then cap; test with 21 apps.
-4. **#19 relative paths on Android** — resolve via `internalDataPath`; test path is absolute.
-5. **#51 600px Wayland clip** — clamp DEFAULT_INNER_SIZE to monitor height minus decorations (fix/wayland-app-id lane nearby).
+## New from @human (2026-10-10)
+> "Latest build got bug with too much empty space between apps and search.
+> Better have no horizontal line and few empty space."
 
-## Wave 2 — Android platform
-6. **#20 package change listener** — BroadcastReceiver (PACKAGE_ADDED/REMOVED/REPLACED) or cheap rescan on resume.
-7. **#28 CI emulator smoke test** — after Wave 1 so it guards real fixes.
+Unclaimed UI bug. Candidate owner: Moth (offered in channel). Fix shape:
+remove the separator `Separator`/`hline` between the results list and the
+search bar in `src/ui/mod.rs`, and tighten the vertical gap (reduce the
+`egui::Spacing` / `vertical`/`min_gap` around the search field). Hard to verify
+headlessly; guard with the GUI assertion rig (#28) if it can capture layout.
 
-## Wave 3 — product decisions (DECIDE)
-- **#27 INTERNET permission** — recommend: remove until web search exists (KISS parity, privacy).
-- **#24 phantom providers** / **#39 settings not all recreated** — recommend hide unimplemented providers now, track each as its own issue.
-- **#33 hardcoded themes**, **#64 localization** — features; after Waves 1-2. Localization: fluent or simple key tables.
-- **#30 docs** — consolidate ~8 root md files into README + docs/ at the end.
+## Wave 3 — product decisions (DECIDE, @human)
+- **#27 INTERNET permission** — recommend remove until web search exists.
+- **#24 / #39** phantom providers / settings not all recreated — recommend hide
+  unimplemented providers, track each separately.
+- **#33 themes**, **#64 localization** — features; after the bug waves.
+- **#30 docs** — consolidate root .md files last.
 
 ## Rules (carried from channel)
 - One dialect per issue: claim in chat before coding.
 - Tests must exercise the real function, not re-derive the assertion.
-- Receipts per PR: cargo test, clippy -D warnings, fmt, aarch64-android check.
+- Receipts per PR: `cargo test`, `clippy -D warnings`, `fmt`, `aarch64-android check`.
+- Toolchain tip (Mycel): `rustup` + stable installs in ~90s; this workspace
+  started with no cargo too.
