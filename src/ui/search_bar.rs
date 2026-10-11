@@ -73,11 +73,12 @@ impl RissApp {
         } else {
             p.surface
         };
-        let border = if all_apps {
-            Color32::TRANSPARENT
-        } else {
-            p.border
-        };
+        // No outline. The previous 1px `p.border` stroke drew a visible
+        // horizontal line across the top of the bar, reading as a divider
+        // between the results and the search field (reported by @human: "no
+        // horizontal line"). The bar keeps its fill so it stays distinguishable
+        // but blends into the results above.
+        let border = Color32::TRANSPARENT;
         egui::Frame::NONE
             .fill(bar_fill)
             .corner_radius(CornerRadius::same(rounded))

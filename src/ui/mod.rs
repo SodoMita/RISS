@@ -813,11 +813,15 @@ impl RissApp {
         // They are painted with `p.panel`, which is transparent whenever the
         // home-screen wallpaper should show through behind the results.
         egui::TopBottomPanel::bottom("launcher-search")
-            .exact_height(search_height + status_height + 20.0)
+            // Drop the old +20.0 slack (it pushed the bar away from the
+            // results) and tighten the vertical margin so the search field
+            // sits flush under the result list with only a hair of breathing
+            // room (reported by @human: less empty space).
+            .exact_height(search_height + status_height + 2.0)
             .frame(
                 egui::Frame::NONE
                     .fill(p.panel)
-                    .inner_margin(egui::Margin::same(10)),
+                    .inner_margin(egui::Margin::symmetric(10, 3)),
             )
             .show(ctx, |ui| {
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -843,7 +847,9 @@ impl RissApp {
             .frame(
                 egui::Frame::NONE
                     .fill(p.panel)
-                    .inner_margin(egui::Margin::same(10)),
+                    // Keep the top margin (clears the system bars) but remove
+                    // the bottom padding so results meet the search bar.
+                    .inner_margin(egui::Margin::symmetric(10, 0)),
             )
             .show(ctx, |ui| {
                 // One scroll area, owned by the result list, so wheel ticks
