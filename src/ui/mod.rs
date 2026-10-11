@@ -18,6 +18,8 @@ mod osk;
 mod results;
 mod search_bar;
 mod settings;
+#[cfg(all(test, not(target_os = "android")))]
+mod tap_tests;
 mod touch;
 mod widgets;
 pub(crate) mod window_mode;

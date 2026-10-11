@@ -410,6 +410,8 @@ impl RissApp {
             });
         let mut toggle = false;
         let mut kebab: Option<egui::Response> = None;
+        // Where ★ and ⋮ really ended up; the row's click area must stop there.
+        let mut actions_rect: Option<egui::Rect> = None;
         let actions_width = if result.entry.is_virtual() { 0.0 } else { 60.0 };
         let shown = frame.show(ui, |ui| {
             ui.set_min_width(ui.available_width());
@@ -429,8 +431,18 @@ impl RissApp {
                     }
                 }
                 ui.add_space(5.0);
-                let text_width = (ui.available_width() - actions_width).max(20.0);
+                // The text column claims its full width (issue #18):
+                // `allocate_ui` advances by what the content used, so a short
+                // name used to pull ★ and ⋮ into the middle of the row, under
+                // the row's click area, where a tap launched the app instead.
+                let spacing = if actions_width > 0.0 {
+                    ui.spacing().item_spacing.x
+                } else {
+                    0.0
+                };
+                let text_width = (ui.available_width() - actions_width - spacing).max(20.0);
                 ui.allocate_ui(Vec2::new(text_width, height - 12.0), |ui| {
+                    ui.set_min_width(text_width);
                     ui.vertical(|ui| {
                         ui.label(RichText::new(&shown_name).size(16.0).color(
                             if result.match_type == MatchType::Exact && !self.query.is_empty() {
@@ -462,7 +474,7 @@ impl RissApp {
                     });
                 });
                 if actions_width > 0.0 {
-                    ui.allocate_ui(Vec2::new(actions_width, height - 12.0), |ui| {
+                    let actions = ui.allocate_ui(Vec2::new(actions_width, height - 12.0), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.horizontal(|ui| {
                             let star = if result.entry.is_favorite {
@@ -501,14 +513,19 @@ impl RissApp {
                             ));
                         });
                     });
+                    actions_rect = Some(actions.response.rect);
                 }
             });
         });
-        // The row click area stops before the action buttons so that pressing
-        // ★ or ⋮ does not also launch the application.
+        // The row's click area is registered after ★ and ⋮, so it sits on
+        // top of them and would win every tap it covers. It stops where the
+        // buttons actually start, measured, not where the layout was meant
+        // to put them.
         let response = {
             let mut click_rect = shown.response.rect;
-            click_rect.max.x -= actions_width;
+            if let Some(actions) = actions_rect {
+                click_rect.max.x = click_rect.max.x.min(actions.min.x);
+            }
             ui.interact(click_rect, shown.response.id, Sense::click())
         };
         if response.clicked() {
