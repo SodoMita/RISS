@@ -65,7 +65,7 @@ Make RISS a dependable, minimal Android home launcher while preserving its Linux
 1. **CI expansion** (#28): Android emulator and Linux integration tests
 2. **Code modularization** (#29): Split ui.rs into logical modules
 3. **Documentation** (#30): Update and consolidate all docs
-4. **License** (#31): Add LICENSE file
+4. **License** (#31): done — `LICENSE` is GPL-3.0-only, and README/Cargo now say so
 
 ### v1.0 — Stable Release
 
