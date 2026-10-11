@@ -231,7 +231,7 @@ If you encounter issues:
 
 ## 📄 License
 
-MIT
+GPL-3.0-only (see `LICENSE`).
 
 ---
 
