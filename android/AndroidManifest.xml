@@ -28,8 +28,14 @@
           on-screen keyboard is open. The NativeActivity surface itself
           keeps its full size, so the app reads the content rect and keeps
           the search bar above the keyboard (see src/ui/insets.rs).
-          configChanges: keyboard, size and layout changes are handled
+          configChanges: every change a launcher can absorb is handled
           in-app instead of recreating the activity (and the GL surface).
+          Recreation inside a live process costs a process restart (winit
+          can build only one event loop per process, see android_main in
+          src/lib.rs), so routine events must not trigger it: uiMode is the
+          common one (scheduled dark mode flips it every evening), then
+          locale, font scale, display size (density), SIM (mcc/mnc) and
+          plugging in a keyboard or d-pad (navigation, touchscreen).
 
             Theme.Wallpaper is what makes the home-screen wallpaper visible
             behind the launcher: it sets windowShowWallpaper (PhoneWindow turns
@@ -49,7 +55,7 @@
             android:name="android.app.NativeActivity"
             android:label="RISS Launcher"
             android:theme="@android:style/Theme.Wallpaper.NoTitleBar"
-            android:configChanges="orientation|keyboard|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection|density"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
             
