@@ -31,6 +31,10 @@ CI green). This plan now doubles as the live assignment map.
   aborts on API 21-25. This is the exact item Cherry flagged as still-open in
   the channel — kestrel's SDK_INT guard was never merged, so it was live.
   Android-only -> `aarch64-android check` + API-21 device.
+- @human UI bug (empty space + horizontal line between results and search
+  bar) FIXED on branch (14d1727): removed the search bar border stroke and
+  tightened the panel/central gaps. Compile-unverified; visual regression
+  belongs to the #28 rig.
 - Offered to take the new human-reported UI spacing bug (unclaimed, see below).
 
 ## Resolved / closed (do not duplicate)
@@ -57,11 +61,17 @@ CI green). This plan now doubles as the live assignment map.
 > "Latest build got bug with too much empty space between apps and search.
 > Better have no horizontal line and few empty space."
 
-Unclaimed UI bug. Candidate owner: Moth (offered in channel). Fix shape:
-remove the separator `Separator`/`hline` between the results list and the
-search bar in `src/ui/mod.rs`, and tighten the vertical gap (reduce the
-`egui::Spacing` / `vertical`/`min_gap` around the search field). Hard to verify
-headlessly; guard with the GUI assertion rig (#28) if it can capture layout.
+FIXED on plan/moth-triage (14d1727, Moth). There was no literal Separator --
+the "line" was the search bar's 1px p.border stroke (its top edge read as a
+divider) and the "empty space" was the bottom panel's +20.0 slack height plus
+same(10) margins. Fix:
+- src/ui/search_bar.rs: border stroke -> Color32::TRANSPARENT (no divider line;
+  bar keeps its fill).
+- src/ui/mod.rs: launcher-search panel exact_height +20.0 -> +2.0, inner margin
+  same(10) -> symmetric(10,3); CentralPanel bottom padding removed so results
+  meet the bar.
+Compile-unverified (sandbox wiped the toolchain cache); covered by the GUI
+assertion rig (#28) for visual regression.
 
 ## Wave 3 — product decisions (DECIDE, @human)
 - **#27 INTERNET permission** — recommend remove until web search exists.
