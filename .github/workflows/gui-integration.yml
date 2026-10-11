@@ -47,7 +47,34 @@ jobs:
         run: cargo build -j $(nproc)
 
       - name: Run GUI assertions
-        run: ./scripts/gui-assertions.sh
+        # pipefail is not optional here: `script | tee` without it reports tee's
+        # exit status, so the job could never fail -- a CI check that cannot go
+        # red is worse than no check, and this is the exact class of hole the
+        # assertions below exist to catch.
+        run: |
+          set -o pipefail
+          ./scripts/gui-assertions.sh | tee gui-assert.log
+
+      - name: Say in the summary whether anything was measured
+        if: always()
+        run: |
+          {
+            echo "## Headless GUI assertions"
+            echo ""
+            if grep -q "did NOT run" gui-assert.log 2>/dev/null; then
+              echo "**SKIPPED: the compositor never started, so nothing was measured.**"
+              echo ""
+              echo "This is not a pass. Usually it means the tool set could not be installed on this runner image."
+            elif grep -q "all cases passed" gui-assert.log 2>/dev/null; then
+              echo "All cases passed. Numbers behind the thresholds:"
+            else
+              echo "**FAILED** (see the log; the frames are in the uploaded artifact)."
+            fi
+            echo ""
+            echo '```'
+            grep -E "red through the window|red:|colours|window rect|not blending|missing; GUI" gui-assert.log 2>/dev/null | tail -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the frames that were measured
         if: always()
