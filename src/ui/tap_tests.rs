@@ -279,6 +279,31 @@ fn widest_run(map: &str, glyph: char) -> usize {
 }
 
 #[test]
+fn search_field_takes_normal_and_quick_finger_taps() {
+    for input in [Input::Finger, Input::QuickFinger] {
+        let mut rig = Rig::new(2.75);
+        let id = egui::Id::new("riss-search");
+        let field = rig
+            .ctx
+            .read_response(id)
+            .expect("search field is present")
+            .rect;
+        rig.ctx.memory_mut(|memory| memory.surrender_focus(id));
+        rig.step(Vec::new());
+        assert!(
+            !rig.ctx.memory(|memory| memory.has_focus(id)),
+            "precondition: the field has surrendered focus"
+        );
+
+        rig.tap(input, field.center());
+        assert!(
+            rig.ctx.memory(|memory| memory.has_focus(id)),
+            "{input:?} tap on the painted search field must give it focus"
+        );
+    }
+}
+
+#[test]
 fn dragging_a_result_row_scrolls_without_launching() {
     let mut dragged = Rig::new(2.75);
     let y = first_row_center(&mut dragged);
