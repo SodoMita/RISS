@@ -456,7 +456,6 @@ impl RissApp {
         // Leaving query mode supersedes anything in flight, so a late answer
         // cannot overwrite the list we are about to build.
         self.expected_search_generation = u64::MAX;
-        let limit = self.settings.number("number-of-display-elements", 20);
         if self.show_hidden {
             // The hidden-apps list: activating a row restores it (KISS has no
             // such screen; pr-3 called it "Excluded").
