@@ -55,6 +55,22 @@ jobs:
           set -o pipefail
           ./scripts/gui-assertions.sh | tee gui-assert.log
 
+      - name: Install a virtual keyboard for the search assertions
+        # Its own step, allowed to fail: if the runner image has no `wtype`
+        # the search script skips with a ::warning:: and the summary says
+        # it measured nothing. A package name that is wrong on the runner
+        # must not redden an unrelated change (that happened once already).
+        continue-on-error: true
+        run: sudo apt-get install -y --no-install-recommends wtype
+
+      - name: Run search pixel assertions
+        # Types real queries into the running launcher and checks that an
+        # application row -- not the web-search fallback -- is painted first
+        # for "cafe" (accent folding) and "vb" (camel case).
+        run: |
+          set -o pipefail
+          ./scripts/gui-search-assertions.sh | tee gui-search.log
+
       - name: Say in the summary whether anything was measured
         if: always()
         run: |
@@ -73,6 +89,20 @@ jobs:
             echo ""
             echo '```'
             grep -E "red through the window|red:|colours|window rect|not blending|missing; GUI" gui-assert.log 2>/dev/null | tail -20
+            echo '```'
+            echo ""
+            echo "### Search pixel assertions (typed queries)"
+            echo ""
+            if grep -q "skipped" gui-search.log 2>/dev/null; then
+              echo "**SKIPPED: no virtual keyboard on this runner, so no query was typed.** Not a pass."
+            elif grep -q "all cases passed" gui-search.log 2>/dev/null; then
+              echo "All cases passed. First-row right-margin colours (provider row vs application row):"
+            else
+              echo "**FAILED** (see the log; the frames are in the uploaded artifact)."
+            fi
+            echo ""
+            echo '```'
+            grep -E "right-margin colours|did not put|missing; search" gui-search.log 2>/dev/null | tail -5
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

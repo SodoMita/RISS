@@ -63,9 +63,9 @@ fn isolate_storage() {
     });
 }
 
-struct Rig {
-    ctx: egui::Context,
-    app: RissApp,
+pub(super) struct Rig {
+    pub(super) ctx: egui::Context,
+    pub(super) app: RissApp,
     frame: eframe::Frame,
     time: f64,
     pixels_per_point: f32,
@@ -75,28 +75,42 @@ impl Rig {
     /// The real app, showing one installed (non-virtual) app in the
     /// all-apps list, after two settled frames.
     fn new(pixels_per_point: f32) -> Self {
+        let mut entry = AppEntry::virtual_entry("Tap Target", "", EXEC);
+        entry.desktop_file = std::path::PathBuf::from("/nonexistent/riss-tap-target.desktop");
+        assert!(!entry.is_virtual(), "the row must carry ★ and ⋮");
+        let mut rig = Self::with_apps(vec![entry], pixels_per_point);
+        rig.app.show_all_apps = true;
+        rig.reset();
+        rig
+    }
+
+    /// The real app over a given app list, before any frame has run.
+    pub(super) fn with_apps(entries: Vec<AppEntry>, pixels_per_point: f32) -> Self {
         isolate_storage();
         let ctx = egui::Context::default();
         let cc = eframe::CreationContext::_new_kittest(ctx.clone());
         let mut app = RissApp::with_settings(&cc, SettingsData::default(), Vec::new());
-        let mut entry = AppEntry::virtual_entry("Tap Target", "", EXEC);
-        entry.desktop_file = std::path::PathBuf::from("/nonexistent/riss-tap-target.desktop");
-        assert!(!entry.is_virtual(), "the row must carry ★ and ⋮");
-        app.all_apps = vec![entry.clone()];
-        app.apps = vec![entry];
-        app.show_all_apps = true;
-        let mut rig = Self {
+        app.reset_user_data_for_test();
+        // Through the same door the loader thread's answer takes, and with
+        // that thread told to stand down: the constructor started a real
+        // discovery of the host's apps, which would otherwise land on top
+        // of this fixture mid-test.
+        app.install_apps_for_test(entries);
+        Self {
             ctx,
             app,
             frame: eframe::Frame::_new_kittest(),
             time: 0.0,
             pixels_per_point,
-        };
-        rig.reset();
-        rig
+        }
     }
 
-    fn step(&mut self, events: Vec<Event>) {
+    pub(super) fn step(&mut self, events: Vec<Event>) {
+        let _ = self.frame_output(events);
+    }
+
+    /// One frame, returning what egui would hand to the renderer.
+    pub(super) fn frame_output(&mut self, events: Vec<Event>) -> egui::FullOutput {
         self.time += 1.0 / 60.0;
         let mut input = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)),
@@ -112,7 +126,7 @@ impl Rig {
         let Self {
             ctx, app, frame, ..
         } = self;
-        let _ = ctx.run(input, |ctx| app.update(ctx, frame));
+        ctx.run(input, |ctx| app.update(ctx, frame))
     }
 
     fn tap(&mut self, input: Input, pos: Pos2) {
@@ -192,7 +206,7 @@ impl Rig {
     fn reset(&mut self) {
         self.app.history = HistoryData::default();
         self.app.status_message = None;
-        self.app.reapply_usage();
+        self.app.refresh_from_history();
         // Not Escape: the launcher treats it as "back" and leaves the
         // all-apps list, which would make every later tap hit nothing.
         egui::Popup::close_all(&self.ctx);

@@ -754,7 +754,7 @@ impl RissApp {
             } else {
                 format!("{} hidden from results", shown_name)
             });
-            self.reload_apps();
+            self.refresh_from_history();
         }
         if toggle_history_exclusion {
             let entry = result.entry.clone();
@@ -806,7 +806,7 @@ impl RissApp {
             let exec = result.entry.exec.clone();
             self.history.reset_rank(&exec);
             self.save_history();
-            self.reapply_usage();
+            self.refresh_from_history();
             self.set_status("Usage rank reset");
         }
         if copy_name {
@@ -873,7 +873,7 @@ impl RissApp {
                         self.history.set_tags(exec, tags);
                         self.save_history();
                         self.editing_tags = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                     }
                     if ui.button("Cancel").clicked() {
                         self.editing_tags = None;
@@ -901,14 +901,14 @@ impl RissApp {
                         self.history.set_alias(exec, alias);
                         self.save_history();
                         self.editing_alias = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("App renamed");
                     }
                     if ui.button("Reset").clicked() {
                         self.history.set_alias(exec, String::new());
                         self.save_history();
                         self.editing_alias = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("Name reset to default");
                     }
                     if ui.button("Cancel").clicked() {
@@ -938,7 +938,7 @@ impl RissApp {
                         self.save_history();
                         self.icons.clear();
                         self.editing_icon = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("Custom icon set");
                     }
                     if ui.button("Reset").clicked() {
@@ -946,7 +946,7 @@ impl RissApp {
                         self.save_history();
                         self.icons.clear();
                         self.editing_icon = None;
-                        self.reload_apps();
+                        self.refresh_from_history();
                         self.set_status("Icon reset to default");
                     }
                     if ui.button("Cancel").clicked() {

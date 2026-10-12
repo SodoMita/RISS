@@ -111,8 +111,33 @@ keystroke -> RissApp::update_results()            [UI thread, returns immediatel
 ```
 
 Reloads follow the same shape: `reload_apps()` only calls `AppLoader::request()`;
-`load_app_entries()` runs on the loader thread; `apply_loaded_apps()` ->
-`rebuild_index()` bumps `data_generation` and re-submits the query.
+`load_app_entries()` runs on the loader thread; `apply_loaded_apps()` keeps the
+pristine list as `discovered` and calls `refresh_from_history()` ->
+`rebuild_index()`, which bumps `data_generation` and re-submits the query.
+
+Emptying the field calls `SearchWorker::cancel()` before anything else, which
+is `MainActivity.updateSearchRecords` -> `cancelSearch()` running
+unconditionally: the in-flight search stops within 64 candidates and publishes
+nothing, rather than finishing and being discarded.
+
+### Rescans versus re-derivations
+
+Before this change 17 call sites went through `reload_apps()` -- a full
+`.desktop` walk on Linux, a JNI package scan on Android -- for edits that do
+not change the installed set: favourite add/remove/move (a drag was one scan
+per slot crossed), tag, alias and icon edits, exclusion toggles, settings
+resets, backup import. KISS does none of that: `PackageManager` is re-queried
+only from `LauncherApps.Callback`; everything else updates the pojo in memory.
+
+Now `all_apps` is **derived** from a pristine `discovered` list plus history on
+every edit (`refresh_from_history`, no I/O), which is also what makes the edits
+reversible -- clearing an alias restores the discovered name because the
+discovered name was never overwritten. Three rescans remain, each for a reason:
+startup, uninstall (the set changed), and leaving the settings screen (the only
+manual way to pick up a newly installed app, since neither platform bridge
+delivers package-change events yet). `favourite_changes_never_trigger_a_rescan`
+and `editing_an_alias_does_not_rescan_and_clearing_it_restores_the_name` pin
+this through the real `RissApp`.
 
 ## 6. Removed or disabled
 
@@ -163,6 +188,14 @@ row, launching teaches the next search of that query only, and the
 `number-of-display-elements` preference reaches the live list through the
 Java parse.
 
+`src/ui/search_frame_tests.rs` goes one step further along the same path and
+reads **egui's frame output**: the query is typed into the real search field
+as `Event::Text`, the real `update` runs frame after frame, and the assertion
+is on the `Shape::Text` galleys egui hands to the renderer -- `Café Noir`
+appears as a text shape above the typed query, `Nautilus` does not, and four
+backspaces take the row away again. Built on Moth's `tap_tests::Rig` (#86)
+rather than beside it, so there is one headless rig in the tree.
+
 `src/tests/live_search.rs` drives the real `SearchWorker` and reads results
 back through the same generation guards: accents/diacritics both directions, case insensitivity with the
 lowercasing flag off, four non-Latin scripts, dashes, camel case, equal-score
@@ -180,7 +213,37 @@ point, `String.compareTo` UTF-16 ordering vs Rust's code-point ordering,
 `Double.valueOf(...).intValue()` including `Infinity` / `NaN` / saturation /
 Rust-only spellings, and `HistoryMode.valueById`'s fallback.
 
-`cargo test` **181 passed / 0 failed** (was 110 on `main`).
+`cargo test` **202 passed / 0 failed** (was 110 on `main`).
+
+### Pixels
+
+`scripts/gui-search-assertions.sh` types queries into the **running binary**
+under headless sway (wlroots headless backend, llvmpipe) with `wtype`, and
+measures the first result row. An application row carries ★ and ⋮ in its
+right margin; a provider row does not, so "an app, not the web-search
+fallback, is first" is a colour count. Measured on this container, sway 1.7:
+
+| state | first-row right-margin colours |
+|---|---|
+| empty query | 1 |
+| `qzxjw` (nothing matches; web-search row first) | 15 |
+| `cafe` -> Café Noir | **87** |
+| `vb` -> VirtualBox | **87** |
+
+Negative control, run rather than assumed: with the normalizer's NFKD branch
+disabled, `cafe` drops to 15 (the provider row) and the script fails with
+"accent folding is broken" while `vb` stays at 87. The instrument
+discriminates.
+
+Two probe bugs were found by running it, both of which would have looked like
+launcher bugs on paper: `wtype` drops the first key of every invocation (the
+keymap race), so the first draft typed `afe`; and discovery dedups on `Exec`,
+so six fixtures sharing `/bin/true` collapsed to one. Both are documented in
+the script.
+
+The repo's existing `scripts/gui-assertions.sh` (transparency, opaque themes,
+hide-circle, 360px output) also passes on this branch's binary: all five
+cases, measured here, not inferred from CI.
 
 ## 8. Measurements
 
@@ -239,6 +302,8 @@ cargo clippy --all-targets -- -D warnings              # clean
 cargo test                                             # 181 passed / 0 failed
 cargo test --release --lib -- --nocapture tests::perf  # benchmark above
 cargo check --target aarch64-linux-android --lib       # Android
+scripts/gui-assertions.sh        target/debug/riss_launcher   # 5/5 under sway 1.7
+scripts/gui-search-assertions.sh target/debug/riss_launcher   # 4/4, typed queries
 ```
 
 ## 10. Remaining gaps
@@ -278,10 +343,9 @@ Named, not papered over.
    very large drawer this is a one-off cost per reload, not per keystroke.
 9. No on-device Android run. `cargo check --target aarch64-linux-android`
    is a compile check, not a device test, and is reported as such.
-10. **No compositor run of this branch.** `scripts/gui-assertions.sh` needs
-    `sway`, `grim` and ImageMagick, none of which are installable in this
-    sandbox. `src/tests/live_app.rs` covers everything up to egui's painting,
-    so the gap is specifically "do these rows reach actual pixels" - the one
-    thing the repo's GUI job exists for. Cherry fixed that job's apt names on
-    `main@3afbe77`; this branch should ride it before anyone calls it done on
-    a device.
+10. **Pixels are verified on Linux only.** Both GUI scripts pass under
+    sway 1.7 + llvmpipe here, with typed queries. That is a Linux desktop
+    result; nothing has been seen on an Android screen (see 9). The search
+    pixel step is wired into the GUI job behind a `continue-on-error` wtype
+    install, so a runner without the package reports "skipped, measured
+    nothing" in the summary rather than a false pass or a false failure.

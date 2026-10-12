@@ -142,6 +142,18 @@ impl SearchWorker {
         generation
     }
 
+    /// `SearchHandler.cancelSearch()`: stop whatever is in flight without
+    /// starting anything new. The worker notices within
+    /// [`CANCEL_CHECK_INTERVAL`] candidates and publishes nothing.
+    ///
+    /// Implemented by advancing the generation counter: the in-flight
+    /// search compares its own generation against it and stops. Nothing
+    /// can be waiting for the skipped generation because only `submit`
+    /// hands generations out.
+    pub fn cancel(&self) {
+        self.latest.fetch_add(1, Ordering::AcqRel);
+    }
+
     /// Newest generation requested so far.
     pub fn latest_generation(&self) -> u64 {
         self.latest.load(Ordering::Acquire)
@@ -169,6 +181,8 @@ impl SearchWorker {
 
 impl Drop for SearchWorker {
     fn drop(&mut self) {
+        // Do not wait for a search nobody will read: cancel it, then stop.
+        self.cancel();
         let _ = self.tx.send(Job::Stop);
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
@@ -237,6 +251,12 @@ impl<T: Send + 'static> AppLoader<T> {
             latest,
             handle: Some(handle),
         }
+    }
+
+    /// How many reloads have been requested so far. The number a test
+    /// watches to prove an edit did *not* trigger a rescan.
+    pub fn requested(&self) -> u64 {
+        self.latest.load(Ordering::Acquire)
     }
 
     /// Ask for a reload. Non-blocking.
@@ -389,6 +409,24 @@ mod tests {
         assert_eq!(out.generation, last);
         // The 20 superseded jobs produced no outcomes at all.
         assert!(worker.poll(1).is_none());
+    }
+
+    #[test]
+    fn cancel_stops_the_in_flight_search_and_publishes_nothing() {
+        let worker = SearchWorker::new(|| {});
+        let idx = index(1, 50_000);
+        let g = worker.submit(params("app"), Arc::clone(&idx));
+        worker.cancel();
+        // Give a non-cancelled search far longer than it would need.
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            worker.poll(1).is_none(),
+            "a cancelled search must not publish"
+        );
+        assert!(worker.latest_generation() > g);
+        // The worker is still alive and serves the next search.
+        let g2 = worker.submit(params("app 0001"), Arc::clone(&idx));
+        assert!(wait_for(&worker, 1, g2).is_some());
     }
 
     #[test]

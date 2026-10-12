@@ -38,11 +38,25 @@ fn app_entry(name: &str, exec: &str) -> AppEntry {
     }
 }
 
+/// Keep `HistoryData::load` and every save away from the developer's real
+/// config directory. A test that silently reads the host's launch history
+/// would pass or fail depending on whose machine it ran on.
+fn isolate_storage() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let dir = std::env::temp_dir().join(format!("riss-live-app-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::env::set_var(crate::storage::DATA_DIR_ENV, &dir);
+    });
+}
+
 /// Build the real app on a bare egui context and install a known app list
 /// through the same entry point the loader thread's result takes.
 fn launcher(entries: Vec<AppEntry>) -> RissApp {
+    isolate_storage();
     let ctx = egui::Context::default();
     let mut app = RissApp::with_context(&ctx, SettingsData::default(), Vec::new());
+    app.reset_user_data_for_test();
     app.install_apps_for_test(entries);
     app
 }
@@ -244,4 +258,121 @@ fn the_result_limit_setting_reaches_the_live_list() {
     // A broken preference falls back to DEFAULT_MAX_RESULTS = 50.
     app.set_setting_for_test("number-of-display-elements", "nonsense");
     assert_eq!(type_query(&mut app, "app").len(), 40);
+}
+
+#[test]
+fn clearing_the_query_cancels_the_search_instead_of_discarding_it() {
+    // `MainActivity.updateSearchRecords` calls `cancelSearch()` before it
+    // looks at the new query, so an emptied field stops the work rather than
+    // letting it finish and throwing the answer away.
+    let mut entries = sample();
+    for i in 0..20_000 {
+        entries.push(app_entry(&format!("Filler {i:05}"), &format!("f{i}")));
+    }
+    let mut app = launcher(entries);
+    app.set_query_for_test("f");
+    app.set_query_for_test("");
+    // Pump for far longer than the cancelled search would have needed.
+    let until = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < until {
+        app.poll_workers_for_test();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        app.result_names_for_test().is_empty(),
+        "no search rows may appear after the field was emptied"
+    );
+    assert_eq!(
+        app.discarded_outcomes_for_test(),
+        0,
+        "the search was cancelled, so there was nothing to discard"
+    );
+}
+
+#[test]
+fn a_late_answer_for_an_old_query_is_refused_not_painted() {
+    // The other half: if an answer *does* come back for a generation the UI
+    // no longer wants, the guard refuses it. Forced here by submitting two
+    // searches back to back, so the worker may finish both.
+    let mut app = launcher(sample());
+    app.set_query_for_test("fi");
+    app.set_query_for_test("fire");
+    let got = type_query(&mut app, "fire");
+    assert_eq!(got, ["Firefox"]);
+}
+
+#[test]
+fn editing_an_alias_does_not_rescan_and_clearing_it_restores_the_name() {
+    let mut app = launcher(sample());
+    let scans_before = app.loader_requests_for_test();
+
+    app.set_alias_for_test("firefox", "Browser");
+    assert_eq!(type_query(&mut app, "brow"), ["Browser"]);
+    assert!(
+        type_query(&mut app, "firefox").is_empty(),
+        "KISS searches the name the user sees, and the alias replaced it"
+    );
+
+    app.set_alias_for_test("firefox", "");
+    assert_eq!(
+        type_query(&mut app, "firefox"),
+        ["Firefox"],
+        "the discovered name must come back without a rescan"
+    );
+    assert_eq!(
+        app.loader_requests_for_test(),
+        scans_before,
+        "an alias edit must never walk the disk or cross JNI"
+    );
+}
+
+#[test]
+fn tag_edits_are_reversible_without_a_rescan() {
+    let mut discovered = sample();
+    discovered[0].tags = vec!["web".to_string()];
+    let mut app = launcher(discovered);
+    let scans_before = app.loader_requests_for_test();
+
+    assert_eq!(
+        type_query(&mut app, "web"),
+        ["Firefox"],
+        "the discovered tag"
+    );
+    app.set_tags_for_test("firefox", vec!["browser".to_string()]);
+    assert_eq!(type_query(&mut app, "browser"), ["Firefox"]);
+    assert!(
+        type_query(&mut app, "web").is_empty(),
+        "custom tags replace discovered ones"
+    );
+
+    app.set_tags_for_test("firefox", Vec::new());
+    assert_eq!(
+        type_query(&mut app, "web"),
+        ["Firefox"],
+        "clearing custom tags restores the discovered ones"
+    );
+    assert_eq!(app.loader_requests_for_test(), scans_before);
+}
+
+#[test]
+fn favourite_changes_never_trigger_a_rescan() {
+    // Before the discovered/derived split a favourite dragged across ten
+    // slots was ten full package scans -- on Android, ten JNI walks.
+    let mut app = launcher(sample());
+    let scans_before = app.loader_requests_for_test();
+    app.toggle_favorite_for_test("firefox");
+    app.toggle_favorite_for_test("files");
+    for _ in 0..10 {
+        app.move_favorite_for_test("files", 1);
+        app.move_favorite_for_test("files", -1);
+    }
+    app.toggle_favorite_for_test("firefox");
+    assert_eq!(
+        app.loader_requests_for_test(),
+        scans_before,
+        "favourite edits are history edits, not package changes"
+    );
+    // ... and the state is right at the end of it.
+    type_query(&mut app, "fil");
+    assert!(app.result_is_favorite_for_test(0));
 }

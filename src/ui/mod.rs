@@ -22,6 +22,8 @@ pub(crate) mod insets;
 mod osk;
 mod results;
 mod search_bar;
+#[cfg(all(test, not(target_os = "android")))]
+mod search_frame_tests;
 mod settings;
 #[cfg(all(test, not(target_os = "android")))]
 mod tap_tests;
@@ -70,7 +72,16 @@ enum Screen {
 
 pub struct RissApp {
     query: String,
-    /// Every discovered app, including ones excluded from the lists.
+    /// The app list exactly as the platform loader produced it: no alias,
+    /// no custom tags, no custom icon, no usage stamps.
+    ///
+    /// Everything the user can edit is layered on top of this by
+    /// `refresh_from_history`, which makes every edit reversible without a
+    /// rescan: clearing an alias needs the discovered name back, and the
+    /// only place that name survives is here.
+    discovered: Vec<AppEntry>,
+    /// Every discovered app with the user's data applied, including ones
+    /// excluded from the lists.
     all_apps: Vec<AppEntry>,
     /// Apps shown in the normal lists (exclusions applied).
     apps: Vec<AppEntry>,
@@ -94,6 +105,9 @@ pub struct RissApp {
     /// Generation of the search currently on screen. Equal to
     /// `expected_search_generation` once the answer has landed.
     applied_search_generation: u64,
+    /// Test-only: how many worker answers the generation guards refused.
+    #[cfg(test)]
+    discarded_outcomes: u64,
     /// Test-only: ignore the provider-loading worker.
     ///
     /// The constructor kicks off a real app discovery, so a headless test
@@ -185,6 +199,7 @@ impl RissApp {
         let window_mode = WindowMode::from_settings(&settings);
         let mut app = Self {
             query: String::new(),
+            discovered: Vec::new(),
             all_apps: Vec::new(),
             apps: Vec::new(),
             results: Vec::new(),
@@ -201,6 +216,8 @@ impl RissApp {
             },
             expected_search_generation: 0,
             applied_search_generation: 0,
+            #[cfg(test)]
+            discarded_outcomes: 0,
             #[cfg(test)]
             ignore_loader: false,
             picker_searcher: KissSearcher::new(),
@@ -256,9 +273,29 @@ impl RissApp {
         self.app_loader.request();
     }
 
-    /// `AppProvider`'s loader finishing: stamp the user's data onto the
-    /// entries, then rebuild the search index.
-    fn apply_loaded_apps(&mut self, mut apps: Vec<AppEntry>) {
+    /// `AppProvider`'s loader finishing: keep the pristine list, then derive
+    /// the displayed one from it.
+    fn apply_loaded_apps(&mut self, apps: Vec<AppEntry>) {
+        self.discovered = apps;
+        self.refresh_from_history();
+    }
+
+    /// Re-derive `all_apps` from `discovered` plus the user's data, then
+    /// rebuild the search index. **No I/O.**
+    ///
+    /// This is what every history or settings edit calls -- favourite
+    /// add/remove/move, tag, alias and icon edits, exclusion toggles, rank
+    /// resets. Before this split each of those went through `reload_apps`,
+    /// a full `.desktop` walk on Linux and a JNI package scan on Android; a
+    /// favourite dragged across ten slots was ten package scans. KISS does
+    /// not rescan on any of them: `PackageManager` is re-queried only from
+    /// `LauncherApps.Callback`, everything else updates the pojo in memory.
+    ///
+    /// Deriving from the pristine list rather than patching `all_apps` in
+    /// place is what makes the edits reversible: clearing an alias restores
+    /// the discovered name because the discovered name was never overwritten.
+    fn refresh_from_history(&mut self) {
+        let mut apps = self.discovered.clone();
         for app in &mut apps {
             app.launch_count = self.history.get_launch_count(&app.exec);
             app.last_launched = self.history.get_last_launched(&app.exec);
@@ -405,6 +442,11 @@ impl RissApp {
             if outcome.generation == self.expected_search_generation {
                 self.applied_search_generation = outcome.generation;
                 self.apply_search_outcome(&outcome.hits);
+            } else {
+                #[cfg(test)]
+                {
+                    self.discarded_outcomes += 1;
+                }
             }
         }
     }
@@ -453,10 +495,13 @@ impl RissApp {
             self.submit_search();
             return;
         }
-        // Leaving query mode supersedes anything in flight, so a late answer
-        // cannot overwrite the list we are about to build.
+        // `MainActivity.updateSearchRecords` begins with `cancelSearch()`
+        // whether or not a new search follows, so an emptied query does not
+        // just ignore the in-flight answer -- it stops the work. The
+        // generation guard below is belt-and-braces for an answer already on
+        // its way back.
+        self.search_worker.cancel();
         self.expected_search_generation = u64::MAX;
-        let limit = self.settings.number("number-of-display-elements", 20);
         if self.show_hidden {
             // The hidden-apps list: activating a row restores it (KISS has no
             // such screen; pr-3 called it "Excluded").
@@ -790,30 +835,6 @@ impl RissApp {
         self.set_excluded_from_search(entry, excluded);
     }
 
-    /// Stamp usage onto both app lists without walking packages again.
-    ///
-    /// KISS updates the in-memory pojo. `PackageManager` is re-queried only
-    /// from `LauncherApps.Callback`. `reload_apps` here was a full XDG or JNI
-    /// walk on every launch — slower than the Java launcher, and the reason
-    /// `apps` could drift from `all_apps`.
-    fn reapply_usage(&mut self) {
-        for app in &mut self.all_apps {
-            app.launch_count = self.history.get_launch_count(&app.exec);
-            app.last_launched = self.history.get_last_launched(&app.exec);
-            app.is_favorite = self.history.is_favorite(&app.exec);
-        }
-        // Rebuilding the index is what makes the change *visible*: the rows
-        // the UI paints come from `index`, not from `apps`, so stamping the
-        // two Vecs and stopping there would leave a freshly starred app
-        // showing a hollow star until the next disk rescan.
-        //
-        // No I/O happens here -- `rebuild_index` only re-derives the
-        // exclusion filter and the normalized names from `all_apps`, which
-        // is why a launch can afford it and a package change cannot be
-        // skipped.
-        self.rebuild_index();
-    }
-
     fn launch_exec(&mut self, exec: &str) {
         // Search the full list so excluded apps reached through search can
         // still be launched.
@@ -835,7 +856,7 @@ impl RissApp {
                 self.query.clear();
                 self.show_all_apps = false;
                 self.show_hidden = false;
-                self.reapply_usage();
+                self.refresh_from_history();
                 self.set_status(format!("Opened {}", name));
                 if self.settings.enabled("hide-keyboard") {
                     self.surrender_search_focus = true;
@@ -939,7 +960,7 @@ impl RissApp {
                 if let Some(entry) = entry {
                     self.set_excluded_from_search(&entry, false);
                     self.set_status(format!("{} restored to results", self.display_name(&entry)));
-                    self.reload_apps();
+                    self.refresh_from_history();
                     self.update_results();
                 }
             }
@@ -961,7 +982,7 @@ impl RissApp {
         let favorited = self.history.toggle_favorite(exec);
         let name = self.favorite_display_name(exec);
         self.save_history();
-        self.reapply_usage();
+        self.refresh_from_history();
         self.set_status(if favorited {
             format!("{name} was added to favorites")
         } else {
@@ -1233,6 +1254,16 @@ impl RissApp {
 /// `#[cfg(test)]`, so none of this exists in a release build.
 #[cfg(test)]
 impl RissApp {
+    /// Start from no user data. The constructor loads whatever history the
+    /// data directory holds, and under `cargo test` that directory is shared
+    /// by every test in the process -- one test's favourite would otherwise
+    /// become the next test's precondition.
+    pub(crate) fn reset_user_data_for_test(&mut self) {
+        self.history = HistoryData::default();
+        self.settings = SettingsData::default();
+        self.max_result_count = None;
+    }
+
     /// What the provider-loading worker's answer does when it lands.
     pub(crate) fn install_apps_for_test(&mut self, entries: Vec<AppEntry>) {
         // The constructor started a real discovery of the host's installed
@@ -1274,14 +1305,40 @@ impl RissApp {
     /// What the star button does.
     pub(crate) fn toggle_favorite_for_test(&mut self, exec: &str) {
         self.history.toggle_favorite(exec);
-        self.reapply_usage();
+        self.refresh_from_history();
     }
 
     /// What a launch records.
     pub(crate) fn record_query_launch_for_test(&mut self, query: &str, exec: &str) {
         self.history.record_launch(exec);
         self.history.record_launch_for_query(query, exec);
-        self.reapply_usage();
+        self.refresh_from_history();
+    }
+
+    /// What the rename dialog does.
+    pub(crate) fn set_alias_for_test(&mut self, exec: &str, alias: &str) {
+        self.history.set_alias(exec, alias.to_string());
+        self.refresh_from_history();
+    }
+
+    /// What the tag editor does.
+    pub(crate) fn set_tags_for_test(&mut self, exec: &str, tags: Vec<String>) {
+        self.history.set_tags(exec, tags);
+        self.refresh_from_history();
+    }
+
+    /// What a favourites-bar drag does per slot crossed.
+    pub(crate) fn move_favorite_for_test(&mut self, exec: &str, delta: isize) {
+        self.move_favorite_exec(exec, delta);
+    }
+
+    /// How many times the provider loader has been asked to rescan.
+    pub(crate) fn loader_requests_for_test(&self) -> u64 {
+        self.app_loader.requested()
+    }
+
+    pub(crate) fn discarded_outcomes_for_test(&self) -> u64 {
+        self.discarded_outcomes
     }
 
     /// What the settings screen does.
