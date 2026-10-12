@@ -84,8 +84,7 @@ impl Rig {
         let mut entry = AppEntry::virtual_entry("Tap Target", "", EXEC);
         entry.desktop_file = std::path::PathBuf::from("/nonexistent/riss-tap-target.desktop");
         assert!(!entry.is_virtual(), "the row must carry ★ and ⋮");
-        app.all_apps = vec![entry.clone()];
-        app.apps = vec![entry];
+        app.install_apps_for_test(vec![entry]);
         app.show_all_apps = true;
         let mut rig = Self {
             ctx,
@@ -365,8 +364,7 @@ fn favorites_row_sits_midway_between_results_and_search() {
             .bools
             .insert("large-search-bar".into(), large);
         let apps = forty_apps("", &[]);
-        rig.app.all_apps = apps.clone();
-        rig.app.apps = apps;
+        rig.app.install_apps_for_test(apps);
         rig.app.history.add_favorite(EXEC);
         rig.app.reapply_usage();
         rig.app.show_all_apps = true;
@@ -458,8 +456,7 @@ fn result_rows_reach_the_bottom_of_the_list() {
             .insert("subicon-visible".into(), lines);
         rig.app.settings.bools.insert("tags-visible".into(), lines);
         let apps = forty_apps(comment, tags);
-        rig.app.all_apps = apps.clone();
-        rig.app.apps = apps;
+        rig.app.install_apps_for_test(apps);
         rig.app.show_all_apps = true;
         rig.app.update_results();
         rig.step(Vec::new());
