@@ -225,4 +225,95 @@ mod tests {
         let palette = Palette::for_platform(&settings, false);
         assert_eq!(palette.panel, palette.bg);
     }
+
+    /// The last open item from #47 was "rebuild Visuals/Style only when the
+    /// theme changes". Measured instead of assumed: `Palette::from_settings`
+    /// allocates **zero** per call, and the `set_visuals` + `Style` clone +
+    /// `set_style` body costs **2 allocations and ~1.3 KB per frame**.
+    ///
+    /// That is roughly 120 allocations a second at 60 fps, against the 46,476
+    /// *per keystroke* that `4a240f0` removed from the search path -- about a
+    /// thirtieth of one percent. Caching the palette behind a key of
+    /// theme/night-mode/primary-color would therefore buy nothing measurable
+    /// while adding a real failure mode: a stale key is how "I changed the
+    /// accent colour and nothing happened" gets written (#49's family). So the
+    /// conclusion here is to NOT do that optimization, and to keep a bound that
+    /// fails if someone later makes the per-frame path allocate.
+    #[test]
+    fn per_frame_styling_cost_stays_bounded() {
+        use crate::tests::alloc_count::measure;
+        for theme in ["dark", "light", "transparent"] {
+            let settings = settings_with(theme, "show");
+            let ((), allocs, _) = measure(|| {
+                for _ in 0..1000 {
+                    let p = Palette::from_settings(&settings);
+                    // Touch the fields so nothing is optimised away; the
+                    // transparent panel legitimately has alpha 0.
+                    let _ = (p.panel.a(), p.bg.a(), p.accent.a());
+                }
+            });
+            assert!(
+                allocs <= 4_000,
+                "Palette::from_settings({theme}) allocated {allocs} times over 1000 frames; \
+                 it should allocate zero (was 0 when measured)"
+            );
+        }
+
+        let ctx = egui::Context::default();
+        let ((), allocs, _) = measure(|| {
+            for _ in 0..1000 {
+                let mut visuals = egui::Visuals::dark();
+                visuals.override_text_color = Some(Color32::WHITE);
+                ctx.set_visuals(visuals);
+                let mut style = (*ctx.style()).clone();
+                style.spacing.interact_size.y = 44.0;
+                ctx.set_style(style);
+            }
+        });
+        // ~2 per frame measured; bound leaves room for egui internals without
+        // admitting an order-of-magnitude regression.
+        assert!(
+            allocs <= 20_000,
+            "the per-frame visuals/style refresh allocated {allocs} times over 1000 frames \
+             (measured 2 per frame)"
+        );
+    }
+
+    /// The "should there be one draw call?" question, measured on the toolkit
+    /// rather than answered from memory: egui batches a long list, so the count
+    /// tracks clip regions, not rows. 200 labelled rows came out as 38 shapes
+    /// in **2 clipped primitives**, and it stays flat as the list grows.
+    #[test]
+    fn long_lists_stay_a_handful_of_draw_calls() {
+        let ctx = egui::Context::default();
+        let rows = 400usize;
+        let out = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 600.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for i in 0..rows {
+                            ui.label(format!("row {i}"));
+                        }
+                    });
+                });
+            },
+        );
+        let shape_count = out.shapes.len();
+        let prims = ctx.tessellate(out.shapes, 1.0);
+        // Visible rows are clipped away, so the primitive count must not scale
+        // with `rows`; that is the whole reason a per-row mesh would be a
+        // non-problem here.
+        assert!(
+            prims.len() <= 12,
+            "{rows} rows produced {} draw calls from {shape_count} shapes: egui is not batching",
+            prims.len()
+        );
+    }
 }

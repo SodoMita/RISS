@@ -213,7 +213,9 @@ winit = { version = "0.30", features = ["android-native-activity"] }
 
 ## 📄 License
 
-MIT
+GPL-3.0-only — see `LICENSE` in the repository root. It is the same project
+licence on Android; shipping an APK carries the same obligations, so distribute
+the corresponding source alongside any build you publish.
 
 ---
 

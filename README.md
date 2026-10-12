@@ -2,7 +2,7 @@
 
 A minimalist application launcher inspired by RISS Launcher for Android, built with Rust and egui. Works on Linux and can be adapted for other platforms.
 
-![RISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.89+-orange) ![License](https://img.shields.io/badge/license-MIT-green)
+![RISS Launcher](https://img.shields.io/badge/platform-Linux-blue) ![Rust](https://img.shields.io/badge/rust-1.89+-orange) ![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 
 ## Features
 
@@ -312,7 +312,13 @@ The optimized binary will be in `target/release/riss_launcher`.
 
 ## License
 
-MIT License - feel free to use and modify as needed.
+Licensed under the GNU General Public License v3.0 only (`LICENSE`).
+
+Use, study, modify and redistribute are all permitted; redistributions, and
+works built on this code, must carry the same licence and make source
+available. Not "do whatever you like with it" — the README previously said MIT,
+which was never the licence on disk. See `LICENSE` for the terms that actually
+apply.
 
 ## Contributing
 

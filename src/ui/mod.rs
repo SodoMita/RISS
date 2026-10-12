@@ -23,6 +23,8 @@ mod osk;
 mod results;
 mod search_bar;
 mod settings;
+#[cfg(all(test, not(target_os = "android")))]
+mod tap_tests;
 mod touch;
 mod widgets;
 pub(crate) mod window_mode;
@@ -489,12 +491,13 @@ impl RissApp {
         } else if self.settings.enabled("history-hide") {
             self.results.clear();
         } else {
-            // Rank every candidate first, then apply the limit, so filters
-            // like "hide favorites from history" do not shorten the list.
-            self.results = self.search_engine.get_default_apps(&self.apps, usize::MAX);
-            self.apply_history_ordering();
-            let limit = if limit == 0 { usize::MAX } else { limit };
-            self.results.truncate(limit);
+            self.results = Self::history_view(
+                &self.search_engine,
+                &self.apps,
+                &self.history,
+                &self.settings,
+                HistoryData::now_secs(),
+            );
         }
         self.selected_index = self
             .selected_index
@@ -635,21 +638,35 @@ impl RissApp {
         search::web_search_result(name, &template, query)
     }
 
-    /// Order the default (no-query) list according to the `history-mode`
-    /// setting, hiding apps the user excluded from history. Ties are broken
-    /// by name so ordering is deterministic.
-    fn apply_history_ordering(&mut self) {
-        let mode = HistoryMode::from_key(self.settings.value("history-mode"));
-        let hide_favorites = self.settings.enabled("exclude-favorites-history");
-        let excluded = self.history_excluded_set();
+    /// The default (no-query) list, i.e. the history view (issue #22).
+    ///
+    /// The whole pipeline lives here, not in `update_results`, so a test can
+    /// run exactly what the UI runs. Order matters and is the bug #22 was
+    /// about: every candidate is ranked by `history-mode` and filtered
+    /// ("hide favorites", "excluded from history") BEFORE the display limit
+    /// is applied. Cutting first, by favorite status and lifetime launch
+    /// count, dropped the app launched a minute ago whenever enough heavier
+    /// apps existed, and let the favorites filter shrink the list far below
+    /// the limit.
+    fn history_view(
+        engine: &SearchEngine,
+        apps: &[AppEntry],
+        history: &HistoryData,
+        settings: &SettingsData,
+        now: u64,
+    ) -> Vec<SearchResult> {
+        let mut results = engine.get_default_apps(apps, usize::MAX);
         Self::sort_history_results(
-            &mut self.results,
-            &self.history,
-            mode,
-            HistoryData::now_secs(),
-            hide_favorites,
-            &excluded,
+            &mut results,
+            history,
+            HistoryMode::from_key(settings.value("history-mode")),
+            now,
+            settings.enabled("exclude-favorites-history"),
+            &Self::history_excluded_set(settings),
         );
+        let limit = settings.number("number-of-display-elements", 20);
+        results.truncate(if limit == 0 { usize::MAX } else { limit });
+        results
     }
 
     /// Order the default (no-query) list for the history view (issue #22).
@@ -692,8 +709,8 @@ impl RissApp {
     }
 
     /// Exec commands the user excluded from history recording/display.
-    fn history_excluded_set(&self) -> std::collections::HashSet<String> {
-        self.settings
+    fn history_excluded_set(settings: &SettingsData) -> HashSet<String> {
+        settings
             .value("edit-excluded-from-history-apps")
             .split(',')
             .map(str::trim)
@@ -1334,5 +1351,68 @@ mod tests {
         );
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].entry.exec, "plain");
+    }
+
+    /// `count` old, heavily used apps (every other one a favorite) plus one
+    /// app launched once, just now: the exact shape of issue #22.
+    fn heavy_apps_and_one_fresh(count: u64) -> (Vec<AppEntry>, HistoryData) {
+        let mut history = HistoryData::default();
+        let mut apps = Vec::new();
+        for i in 0..count {
+            let exec = format!("heavy-{i}");
+            for _ in 0..10 {
+                history.record_launch_at(&exec, 1_000 + i);
+            }
+            let mut entry = AppEntry::virtual_entry(&format!("Heavy {i}"), "", &exec);
+            entry.launch_count = 10;
+            entry.last_launched = 1_000 + i;
+            entry.is_favorite = i % 2 == 0;
+            apps.push(entry);
+        }
+        history.record_launch_at("fresh", 9_000);
+        let mut fresh = AppEntry::virtual_entry("Fresh", "", "fresh");
+        fresh.launch_count = 1;
+        fresh.last_launched = 9_000;
+        apps.push(fresh);
+        (apps, history)
+    }
+
+    #[test]
+    fn history_view_ranks_everything_before_the_display_limit() {
+        // 30 heavier apps and a 20-row limit: ranking a pre-cut top 20
+        // (favorites + lifetime count) could never surface "fresh".
+        let (apps, history) = heavy_apps_and_one_fresh(30);
+        let mut settings = SettingsData::default();
+        // Favorites are hidden from history by default; show them here so
+        // the fresh app has to beat favorites too, as #22 asks.
+        settings
+            .bools
+            .insert("exclude-favorites-history".to_owned(), false);
+        assert_eq!(settings.value("history-mode"), "recency");
+        assert_eq!(settings.number("number-of-display-elements", 0), 20);
+
+        let view = RissApp::history_view(&SearchEngine::new(), &apps, &history, &settings, 10_000);
+
+        assert_eq!(view.len(), 20);
+        assert_eq!(view[0].entry.exec, "fresh");
+        // Then strictly newest first: heavy-29 was launched last among them.
+        assert_eq!(view[1].entry.exec, "heavy-29");
+    }
+
+    #[test]
+    fn history_view_filters_before_the_display_limit() {
+        // 30 heavy apps, 15 of them favorites. Hiding favorites must leave
+        // all 16 non-favorites, not whatever survived a favorites-first cut.
+        let (apps, history) = heavy_apps_and_one_fresh(30);
+        let mut settings = SettingsData::default();
+        settings
+            .bools
+            .insert("exclude-favorites-history".to_owned(), true);
+
+        let view = RissApp::history_view(&SearchEngine::new(), &apps, &history, &settings, 10_000);
+
+        assert_eq!(view.len(), 16);
+        assert!(view.iter().all(|row| !row.entry.is_favorite));
+        assert_eq!(view[0].entry.exec, "fresh");
     }
 }
