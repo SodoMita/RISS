@@ -23,6 +23,8 @@ mod osk;
 mod results;
 mod search_bar;
 mod settings;
+#[cfg(all(test, not(target_os = "android")))]
+mod tap_tests;
 mod touch;
 mod widgets;
 pub(crate) mod window_mode;
@@ -454,7 +456,6 @@ impl RissApp {
         // Leaving query mode supersedes anything in flight, so a late answer
         // cannot overwrite the list we are about to build.
         self.expected_search_generation = u64::MAX;
-        let limit = self.settings.number("number-of-display-elements", 20);
         if self.show_hidden {
             // The hidden-apps list: activating a row restores it (KISS has no
             // such screen; pr-3 called it "Excluded").
@@ -1018,59 +1019,69 @@ impl RissApp {
     }
 
     fn show_launcher(&mut self, ctx: &egui::Context, p: Palette) {
-        let search_height = if self.settings.enabled("large-search-bar") {
-            92.0
-        } else {
-            72.0
-        };
         let has_favorites = self.apps.iter().any(|app| app.is_favorite);
-        let favorites_height = if has_favorites
+        let show_favorites_bar = has_favorites
             && self.settings.enabled("enable-favorites-bar")
-            && !self.settings.enabled("favorites-hide")
-        {
-            if self.settings.enabled("large-favorites-bar") {
-                74.0
-            } else {
-                58.0
-            }
-        } else {
-            0.0
-        };
-        let status_height = if self.status_message.is_some() {
-            18.0
-        } else {
-            0.0
-        };
+            && !self.settings.enabled("favorites-hide");
 
         // Panels are laid out inside the insets reserved in `update`, so the
-        // search bar sits right above the keyboard.
-        // Panels are laid out from the window edges, so the search bar stays
-        // above the Android keyboard and pinned to the bottom on every resize.
-        // They are painted with `p.panel`, which is transparent whenever the
-        // home-screen wallpaper should show through behind the results.
-        egui::TopBottomPanel::bottom("launcher-search")
-            .exact_height(search_height + status_height + 20.0)
+        // search bar sits right above the keyboard and stays pinned to the
+        // bottom on every resize. They are painted with `p.panel`, which is
+        // transparent whenever the wallpaper should show through.
+        //
+        // Both bottom panels size themselves to their content: egui keeps
+        // each panel's measured rect and lays the next frame out at that
+        // height. Fixed heights left blank bands: 16pt above the 56pt search
+        // box in its 72pt panel and 14pt under the 44pt favorites row in its
+        // 58pt one, which pushed the row off centre and opened a 44pt gap
+        // above the search bar (#78). The margins are chosen so the row sits
+        // midway: 10 (results) + 6 above it, 6 + 10 (search) below it. No
+        // divider lines either: KISS draws none there.
+        // The search panel's height is its content's, measured last frame:
+        // the bar is laid out bottom-up so it never moves, and a content
+        // sized panel cannot shrink around a bottom-up layout (its rect
+        // keeps the top edge it reached), so it would keep the space a
+        // status line once took.
+        let search_id = egui::Id::new("launcher-search");
+        let content_key = search_id.with("content-height");
+        let measured = ctx.data(|d| d.get_temp::<f32>(content_key));
+        let search_panel = egui::TopBottomPanel::bottom(search_id)
+            .resizable(false)
+            .show_separator_line(false)
             .frame(
                 egui::Frame::NONE
                     .fill(p.panel)
                     .inner_margin(egui::Margin::same(10)),
-            )
-            .show(ctx, |ui| {
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            );
+        let search_panel = match measured {
+            Some(height) => search_panel.exact_height(height),
+            None => search_panel,
+        };
+        search_panel.show(ctx, |ui| {
+            let content = ui
+                .with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     self.show_search_bar(ui, p);
                     if let Some((message, _)) = &self.status_message {
                         ui.label(RichText::new(message).size(11.0).color(p.dim));
                     }
-                });
-            });
+                })
+                .response
+                .rect;
+            let height = (content.height() + 20.0).ceil();
+            if measured != Some(height) {
+                ui.ctx().data_mut(|d| d.insert_temp(content_key, height));
+                ui.ctx().request_repaint();
+            }
+        });
 
-        if favorites_height > 0.0 {
+        if show_favorites_bar {
             egui::TopBottomPanel::bottom("launcher-favorites")
-                .exact_height(favorites_height + 8.0)
+                .resizable(false)
+                .show_separator_line(false)
                 .frame(
                     egui::Frame::NONE
                         .fill(p.panel)
-                        .inner_margin(egui::Margin::symmetric(10, 4)),
+                        .inner_margin(egui::Margin::symmetric(10, 6)),
                 )
                 .show(ctx, |ui| self.show_favorites(ui, p));
         }

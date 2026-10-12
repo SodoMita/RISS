@@ -17,6 +17,7 @@ mod settings;
 mod storage;
 #[cfg(test)]
 mod tests;
+
 mod ui;
 
 #[cfg(not(target_os = "android"))]
