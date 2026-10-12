@@ -82,7 +82,17 @@ impl RissApp {
             .fill(bar_fill)
             .corner_radius(CornerRadius::same(rounded))
             .stroke(Stroke::new(1.0_f32, border))
-            .inner_margin(egui::Margin::symmetric(8, 5))
+            // "Large search bar" makes the bar itself taller. It used to
+            // grow only the panel around it, i.e. add 20pt of blank space
+            // above the bar (#78).
+            .inner_margin(egui::Margin::symmetric(
+                8,
+                if self.settings.enabled("large-search-bar") {
+                    15
+                } else {
+                    5
+                },
+            ))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     // KISS layout (`main.xml` + `InterfaceTweaks`): the
@@ -139,12 +149,20 @@ impl RissApp {
                     if all_apps {
                         ui.visuals_mut().override_text_color = Some(Color32::WHITE);
                     }
+                    // `desired_width` excludes the field's own margin, so
+                    // that comes off too, with the 52pt the right button
+                    // takes; otherwise the row overflows by 8pt and the bar
+                    // ends 2pt from the screen edge instead of 10.
+                    let field_margin = egui::Margin::symmetric(4, 2);
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut self.query)
                             .id(egui::Id::new("riss-search"))
                             .hint_text(hint)
                             .font(FontId::proportional(17.0))
-                            .desired_width((ui.available_width() - 52.0).max(40.0))
+                            .margin(field_margin)
+                            .desired_width(
+                                (ui.available_width() - 52.0 - field_margin.sum().x).max(40.0),
+                            )
                             .frame(false),
                     );
                     if response.changed() {

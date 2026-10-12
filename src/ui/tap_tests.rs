@@ -69,6 +69,8 @@ struct Rig {
     frame: eframe::Frame,
     time: f64,
     pixels_per_point: f32,
+    /// What the last frame painted, for layout measurements.
+    shapes: Vec<egui::epaint::ClippedShape>,
 }
 
 impl Rig {
@@ -91,6 +93,7 @@ impl Rig {
             frame: eframe::Frame::_new_kittest(),
             time: 0.0,
             pixels_per_point,
+            shapes: Vec::new(),
         };
         rig.reset();
         rig
@@ -112,7 +115,7 @@ impl Rig {
         let Self {
             ctx, app, frame, ..
         } = self;
-        let _ = ctx.run(input, |ctx| app.update(ctx, frame));
+        self.shapes = ctx.run(input, |ctx| app.update(ctx, frame)).shapes;
     }
 
     fn tap(&mut self, input: Input, pos: Pos2) {
@@ -273,4 +276,204 @@ fn star_and_kebab_take_finger_taps_like_mouse_clicks() {
     assert_eq!(finger, mouse, "a finger tap must do what a click does");
     assert_eq!(phone, mouse, "and so on a 2.75x phone screen");
     assert_eq!(quick, mouse, "and when the whole tap lands in one frame");
+}
+
+/// Bottom edge of the result list's viewport: the clip rectangle the
+/// rows' text is painted with.
+fn list_viewport_bottom(rig: &Rig) -> f32 {
+    rig.shapes
+        .iter()
+        .filter(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => text.galley.text().starts_with("App "),
+            _ => false,
+        })
+        .map(|clipped| clipped.clip_rect.max.y)
+        .fold(f32::NAN, f32::max)
+}
+
+/// Every filled rectangle the last frame painted.
+fn filled_rects(shapes: &[egui::epaint::ClippedShape]) -> Vec<(Rect, egui::Color32)> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<(Rect, egui::Color32)>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+            egui::Shape::Rect(r) if r.fill.a() > 0 => out.push((r.rect, r.fill)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    shapes.iter().for_each(|c| walk(&c.shape, &mut out));
+    out
+}
+
+/// Lowest and highest `y` in `range` where a tap at `x` launches an app,
+/// without resetting history between taps (favorites must survive).
+fn launch_band(rig: &mut Rig, x: f32, range: std::ops::Range<i32>) -> Option<(f32, f32)> {
+    let mut band: Option<(f32, f32)> = None;
+    for y in range {
+        let y = y as f32 + 0.5;
+        rig.tap(Input::Mouse, Pos2::new(x, y));
+        let launched = rig
+            .app
+            .status_message
+            .take()
+            .is_some_and(|(message, _)| message.starts_with("Failed to launch"));
+        egui::Popup::close_all(&rig.ctx);
+        rig.app.show_all_apps = true;
+        rig.app.update_results();
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        if launched {
+            band = Some(band.map_or((y, y), |(lo, _)| (lo, y)));
+        }
+    }
+    band
+}
+
+/// 40 launchable rows; row 0 launches [`EXEC`].
+fn forty_apps(comment: &str, tags: &[&str]) -> Vec<AppEntry> {
+    (0..40)
+        .map(|i| {
+            let exec = if i == 0 {
+                EXEC.to_owned()
+            } else {
+                format!("{EXEC}-{i}")
+            };
+            let mut entry = AppEntry::virtual_entry(&format!("App {i:02}"), comment, &exec);
+            entry.desktop_file = std::path::PathBuf::from("/nonexistent/app.desktop");
+            entry.tags = tags.iter().map(|t| t.to_string()).collect();
+            entry
+        })
+        .collect()
+}
+
+fn panel_rect(rig: &Rig, name: &str) -> Rect {
+    egui::containers::panel::PanelState::load(&rig.ctx, egui::Id::new(name))
+        .map(|state| state.rect)
+        .expect("panel shown")
+}
+
+/// Issue #78 and the "too much empty space between apps and search" report:
+/// the favorites row must sit midway between the end of the result list and
+/// the search box, with no dead band, the favorite must answer taps over its
+/// whole height, and the search box must keep the same margin on both sides.
+#[test]
+fn favorites_row_sits_midway_between_results_and_search() {
+    for large in [false, true] {
+        let mut rig = Rig::new(1.0);
+        rig.app
+            .settings
+            .bools
+            .insert("large-search-bar".into(), large);
+        let apps = forty_apps("", &[]);
+        rig.app.all_apps = apps.clone();
+        rig.app.apps = apps;
+        rig.app.history.add_favorite(EXEC);
+        rig.app.reapply_usage();
+        rig.app.show_all_apps = true;
+        rig.app.update_results();
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+
+        let bar = panel_rect(&rig, "launcher-favorites");
+        let list_end = list_viewport_bottom(&rig);
+        let field = rig
+            .ctx
+            .read_response(egui::Id::new("riss-search"))
+            .expect("search field")
+            .rect;
+        let search_box = filled_rects(&rig.shapes)
+            .into_iter()
+            .map(|(rect, _)| rect)
+            .filter(|rect| rect.contains_rect(field))
+            .min_by(|a, b| a.area().total_cmp(&b.area()))
+            .expect("search box is painted");
+        // The favorite's letter is painted at the centre of its slot
+        // ("transparent favorites" is the default).
+        let centre = rig
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if bar.contains(text.pos) && text.galley.text() == "A" => {
+                    Some(text.visual_bounding_rect().center().y)
+                }
+                _ => None,
+            })
+            .expect("favorite is painted in the bar");
+        let taps = launch_band(&mut rig, 32.0, bar.min.y as i32..bar.max.y as i32)
+            .expect("the favorite answers taps");
+
+        let above = centre - list_end;
+        let below = search_box.min.y - centre;
+        eprintln!(
+            "large={large}: bar {bar:?}, list ends {list_end}, favorite centre {centre}, taps {taps:?}, search box {search_box:?}, centre to list {above}, to search {below}"
+        );
+        // 4pt: egui lets rows paint 3pt past the list's content rect.
+        assert!(
+            (above - below).abs() <= 4.0,
+            "row is off centre: {above} above, {below} below"
+        );
+        assert!(
+            below <= 42.0,
+            "dead band: search box {below}pt below the row's centre"
+        );
+        assert!(
+            taps.1 - taps.0 >= 40.0,
+            "favorite answers taps only on {taps:?}"
+        );
+        let left = search_box.min.x;
+        let right = SCREEN.x - search_box.max.x;
+        assert!(
+            (left - right).abs() <= 1.0,
+            "search box margins {left} / {right}"
+        );
+        if large {
+            assert!(
+                search_box.height() >= 70.0,
+                "large search bar is not larger"
+            );
+        }
+    }
+}
+
+/// The virtual list must draw rows down to the bottom edge of its viewport,
+/// whatever the row shape. With the old row-height constants it reserved
+/// 104pt for a 60pt row and ran out of rows a quarter screen early.
+#[test]
+fn result_rows_reach_the_bottom_of_the_list() {
+    let shapes: [(&str, bool, &str, &[&str]); 4] = [
+        ("default", true, "A comment", &["tag"]),
+        ("default", true, "", &[]),
+        ("small", false, "A comment", &[]),
+        ("large", true, "A comment", &["tag", "other"]),
+    ];
+    for (size, lines, comment, tags) in shapes {
+        let mut rig = Rig::new(1.0);
+        rig.app
+            .settings
+            .values
+            .insert("results-size".into(), size.into());
+        rig.app
+            .settings
+            .bools
+            .insert("subicon-visible".into(), lines);
+        rig.app.settings.bools.insert("tags-visible".into(), lines);
+        let apps = forty_apps(comment, tags);
+        rig.app.all_apps = apps.clone();
+        rig.app.apps = apps;
+        rig.app.show_all_apps = true;
+        rig.app.update_results();
+        rig.step(Vec::new());
+        rig.step(Vec::new());
+        let list_end = list_viewport_bottom(&rig);
+        let lowest = launch_band(&mut rig, 200.0, 200..list_end as i32 + 20)
+            .expect("rows answer taps")
+            .1;
+        eprintln!("{size} lines={lines} comment={comment:?} tags={tags:?}: rows answer down to {lowest}, list ends {list_end}");
+        // A row or the 8pt gap between two rows may meet the edge.
+        assert!(
+            lowest >= list_end - 12.0,
+            "{size}/{lines}: rows stop at {lowest}, {}pt above the end of the list",
+            list_end - lowest
+        );
+    }
 }
