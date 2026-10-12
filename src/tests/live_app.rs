@@ -245,3 +245,31 @@ fn the_result_limit_setting_reaches_the_live_list() {
     app.set_setting_for_test("number-of-display-elements", "nonsense");
     assert_eq!(type_query(&mut app, "app").len(), 40);
 }
+
+#[test]
+fn an_answer_arriving_after_the_query_was_cleared_must_not_paint() {
+    // The race: the search is in flight, the user has already cleared the box,
+    // and only then does the worker's answer land. The list must show the
+    // no-query default, never the stale query's rows.
+    let mut entries = sample();
+    for i in 0..2000 {
+        entries.push(app_entry(&format!("Filler {i:04}"), &format!("f{i}")));
+    }
+    let mut app = launcher(entries);
+    app.set_query_for_test("fire");
+    // Leave query mode before the answer can land.
+    app.set_query_for_test("");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while app.search_pending_for_test() {
+        app.poll_workers_for_test();
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let got = app.result_names_for_test();
+    assert!(
+        got.iter().all(|n| n != "Firefox"),
+        "a cleared query's answer painted over the default list: {got:?}"
+    );
+}
