@@ -173,6 +173,37 @@ impl Rig {
         self.step(Vec::new());
     }
 
+    /// A real finger scroll gesture: press on a row, move far enough for
+    /// egui to classify the interaction as a drag, then release. This is the
+    /// exact issue #17 path; a drag must never become the row's click.
+    fn finger_drag(&mut self, start: Pos2, end: Pos2) {
+        let touch = |phase, pos| Event::Touch {
+            device_id: TouchDeviceId(0),
+            id: TouchId(0),
+            phase,
+            pos,
+            force: None,
+        };
+        let button = |pos, pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        self.step(vec![
+            touch(TouchPhase::Start, start),
+            Event::PointerMoved(start),
+            button(start, true),
+        ]);
+        self.step(vec![touch(TouchPhase::Move, end), Event::PointerMoved(end)]);
+        self.step(vec![
+            touch(TouchPhase::End, end),
+            button(end, false),
+            Event::PointerGone,
+        ]);
+        self.step(Vec::new());
+    }
+
     fn outcome(&self) -> Hit {
         let launch = self
             .app
@@ -245,6 +276,31 @@ fn hit_map(input: Input, pixels_per_point: f32) -> String {
 
 fn widest_run(map: &str, glyph: char) -> usize {
     map.split(|c| c != glyph).map(str::len).max().unwrap_or(0)
+}
+
+#[test]
+fn dragging_a_result_row_scrolls_without_launching() {
+    let mut dragged = Rig::new(2.75);
+    let y = first_row_center(&mut dragged);
+    dragged.reset();
+    dragged.finger_drag(Pos2::new(40.0, y), Pos2::new(40.0, y - 80.0));
+    assert_eq!(
+        dragged.outcome(),
+        Hit::Nothing,
+        "a vertical finger drag over a row must not launch or trigger row actions"
+    );
+
+    // The same starting point remains a valid tap: the drag guard must not
+    // solve accidental launches by making rows inert.
+    let mut tapped = Rig::new(2.75);
+    let y = first_row_center(&mut tapped);
+    tapped.reset();
+    tapped.tap(Input::Finger, Pos2::new(40.0, y));
+    assert_eq!(
+        tapped.outcome(),
+        Hit::Launch,
+        "a short tap must still launch"
+    );
 }
 
 #[test]
